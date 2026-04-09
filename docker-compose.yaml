@@ -1,0 +1,19 @@
+services:
+  phy787:
+    image: majar5c/phy787:v0.0.1  # Replace with your image name
+    user: "1000:1000"
+    group_add:
+      - "1001"  # Change to whichever group that has usb access
+    environment:
+      - DISPLAY=${DISPLAY:-unix:0}
+    volumes:
+      # - ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/run/user/1000/${WAYLAND_DISPLAY}
+      # X11 Forwarding: Map the host's X11 socket
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev/dri:/dev/dri
+      - /dev/bus/usb:/dev/bus/usb
+      - ./workspace:/workspace:rw
+    devices:
+      - /dev/input:/dev/input
+    privileged: true
+    network_mode: host

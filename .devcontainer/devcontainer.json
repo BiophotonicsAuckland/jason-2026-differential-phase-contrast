@@ -1,0 +1,52 @@
+{
+  "name": "phy787",
+  "image": "majar5c/phy787:v0.0.1",
+  
+  // User configuration
+  "remoteUser": "1000",
+  "remoteEnv": {
+    "DISPLAY": "${DISPLAY:-unix:0}"
+  },
+  
+  // Volume mounts
+  "mounts": [
+    // X11 Forwarding
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached",
+    
+    // GPU access
+    "source=/dev/dri,target=/dev/dri,type=bind",
+    
+    // USB access
+    "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+    
+    // Workspace
+    "source=${localWorkspaceFolder},target=/workspace,type=bind"
+  ],
+  
+  // Device access
+  "runArgs": [
+    // Input devices
+    "--device=/dev/input",
+    
+    // Privileged mode (required for USB and device access)
+    "--privileged",
+    
+    // Network host mode
+    "--network=host",
+    
+    // Add group for USB access (gid 1001)
+    "--group-add=1001"
+  ],
+  
+  // Customizations
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.autopep8",
+        "ms-python.python"
+      ]
+    }
+  },
+  
+  "postCreateCommand": "echo 'Dev container started'"
+}
