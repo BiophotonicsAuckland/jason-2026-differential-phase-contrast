@@ -49,7 +49,10 @@ RUN python3 -m venv /opt/venv \
         numpy==1.23 \
         matplotlib \
         pyqt5 \
-        # pydantic yaml opencv-python-headless
+        pydantic \
+        pyyaml \
+        opencv-python-headless \
+        pyserial \
         /tmp/lib/spinnaker-4.3.0.189-amd64/spinnaker_python-4.3.0.189-cp310-cp310-linux_x86_64.whl
 
 # CMD ["/bin/sh", "-c"]
