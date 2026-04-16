@@ -15,7 +15,11 @@ class CameraConfig(BaseModel):
 
     @field_validator("image_save_dir", mode="after")
     def resolve_image_save_dir(cls, p: Path):
-        return p if p.is_absolute() else WORKSPACE / p
+        if not p.is_absolute():
+            p = WORKSPACE / p
+        p.mkdir(parents=True, exist_ok=True)
+
+        return p
 
 class AppConfig(BaseModel):
     """Root configuration model"""

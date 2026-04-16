@@ -3,4 +3,4 @@ camera:
   image_save_dir: 'images'
   attributes:
     AcquisitionFrameRate: 15
-    ExposureTime: 1000
+    ExposureTime: 3000

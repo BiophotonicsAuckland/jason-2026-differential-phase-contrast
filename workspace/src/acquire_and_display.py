@@ -10,6 +10,7 @@ import threading
 from datetime import datetime
 
 from camera import PySpinCamera
+from core.config import AppConfigManager
 
 
 class VideoThread(QThread):
@@ -63,7 +64,7 @@ class VideoThread(QThread):
     def _save_image(self, image):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_path = os.path.join(
-            '.', f"image_{timestamp}.png")
+            AppConfigManager.config.camera.image_save_dir, f"image_{timestamp}.png")
         cv2.imwrite(image_path, image)
         # cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
