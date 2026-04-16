@@ -1,6 +1,8 @@
 import PySpin
 import numpy as np
 
+from core.config import AppConfigManager
+
 class PySpinCamera():
     def __init__(self, camera_idx=0):
         self.camera_idx = camera_idx
@@ -9,6 +11,12 @@ class PySpinCamera():
         self.cam_list: PySpin.CameraList = None
         self.is_acquisiting = False
         self._img_processor = PySpin.ImageProcessor()
+
+    def configure(self):
+        AppConfigManager.load_config()
+        config = AppConfigManager.config.camera
+        self._set_attribute_value(self.cam.AcquisitionFrameRate, float(config.attributes['AcquisitionFrameRate']))
+        self._set_attribute_value(self.cam.ExposureTime, float(config.attributes['ExposureTime']))
 
     def open(self):
         # Retrieve list of cameras from the system
@@ -36,16 +44,16 @@ class PySpinCamera():
             self.cam.TLStream.StreamBufferHandlingMode, 'NewestOnly')
         self._set_attribute_value(self.cam.AcquisitionMode, 'Continuous')
         self._set_attribute_value(self.cam.AcquisitionFrameRateEnable, True)
-        self._set_attribute_value(self.cam.AcquisitionFrameRate, 15.0)
-        self._set_attribute_value(self.cam.ExposureTime, 998.0)
+        self.configure()
         # self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 3)
         # self._set_attribute_value(self.cam.DeviceLinkThroughputLimit, 200000000)
-        self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
+        # self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
+
         
         # print(self.cam.TLStream.StreamBufferCountMode.GetValue())
         # print(PySpinCamera._print_node(self.cam.TLStream.StreamBufferCountMode))
-        print(self.cam.TLStream.StreamBufferCountManual.GetMin())
-        print(self.cam.TLStream.StreamBufferCountManual.GetMax())
+        # print(self.cam.TLStream.StreamBufferCountManual.GetMin())
+        # print(self.cam.TLStream.StreamBufferCountManual.GetMax())
         
 
         # print(print_node(self.cam.AutoExposureTargetGreyValueAuto))

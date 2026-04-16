@@ -1,12 +1,15 @@
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPushButton, QWidget
 import numpy as np
+import cv2
 
+import os
 import sys
 import threading
+from datetime import datetime
 
-from src.camera import PySpinCamera
+from camera import PySpinCamera
 
 
 class VideoThread(QThread):
@@ -19,6 +22,8 @@ class VideoThread(QThread):
         self.camera = PySpinCamera(0)
         self.camera.open()
         self._exit_ready_flag = threading.Event()
+        self.save_flag = False
+        self.reload_flag = False
 
     def run(self):
         if self.camera.cam is None:
@@ -28,15 +33,39 @@ class VideoThread(QThread):
 
         while self._run_flag:
             img = self.camera.get_image_data()
+
+            if self.save_flag:
+                self.save_flag = False
+                self._save_image(img)
+
+            if self.reload_flag:
+                self.reload_flag = False
+                self.camera.configure()
+
             if img is not None:
                 h, w = img.shape
                 bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
                 convert_to_Qt_format = QImage(
                     img.data, w, h, bytes_per_line,
                     QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
-                p = convert_to_Qt_format.scaled(800, 800, Qt.KeepAspectRatio)
+                p = convert_to_Qt_format.scaled(1000, 680, Qt.KeepAspectRatio, )
                 self.change_pixmap_signal.emit(p)
         self._exit_ready_flag.set()
+
+    @pyqtSlot()
+    def trigger_save(self):
+        self.save_flag = True
+
+    @pyqtSlot()
+    def trigger_reload(self):
+        self.reload_flag = True
+
+    def _save_image(self, image):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        image_path = os.path.join(
+            '.', f"image_{timestamp}.png")
+        cv2.imwrite(image_path, image)
+        # cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
     def stop(self):
         """Sets run flag to False and waits for thread to finish"""
@@ -49,8 +78,10 @@ class VideoThread(QThread):
 class App(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Non-Blocking Stream")
+        self.setWindowTitle("Stream")
         self.label = QLabel(self)
+        self.capture_btn = QPushButton("Capture")
+        self.config_btn = QPushButton("Reload configuration")
         self.label.resize(640, 480)
 
         # Create thread
@@ -59,9 +90,22 @@ class App(QWidget):
         self.thread.error_signal.connect(self.close)
         self.thread.start()
 
-        layout = QVBoxLayout()
+        layout = QHBoxLayout()
+        menu_layout = QVBoxLayout()
         layout.addWidget(self.label)
+        menu_layout.setSpacing(10)
+        menu_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(menu_layout)
+        
+        menu_layout.addStretch(1)
+        menu_layout.addWidget(self.capture_btn)
+        menu_layout.addWidget(self.config_btn)
+        menu_layout.addStretch(1)
+        
         self.setLayout(layout)
+
+        self.capture_btn.clicked.connect(self.thread.trigger_save)
+        self.config_btn.clicked.connect(self.thread.trigger_reload)
 
     def update_image(self, qt_img):
         """Updates the image_label with a new image"""
