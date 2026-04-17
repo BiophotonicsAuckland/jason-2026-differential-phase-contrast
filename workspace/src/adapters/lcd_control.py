@@ -17,17 +17,30 @@ def send_and_receive(arduino_serial, text):
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
         self.arduino_serial = serial.Serial(port=port, baudrate=9600, timeout=.1)
+        self.x_center = 64
+        self.y_center = 78
+
+    ## TODO
+    def configure(self):
+        self.x_center = 0
+        self.y_center = 0
 
     def update(self, mode, inner_radius, outer_radius, reverse=False):
         match mode:
             case LCDMode.SPLIT_IN_X:
-                self._send(f"0,60,76,{inner_radius},{outer_radius}") if not reverse else self._send(f"0,-60,76,{inner_radius},{outer_radius}")
+                self._send(f"0,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(f"0,{-self.x_center},{self.y_center},{inner_radius},{outer_radius}")
             case LCDMode.SPLIT_IN_Y:
-                self._send(f"1,60,76,{inner_radius},{outer_radius}") if not reverse else self._send(f"1,60,-76,{inner_radius},{outer_radius}")
+                self._send(f"1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(f"1,{self.x_center},{-self.y_center},{inner_radius},{outer_radius}")
             case LCDMode.CIRCULAR:
-                self._send(f"-1,60,76,{inner_radius},{outer_radius}")
+                self._send(f"-1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}")
             case _:
                 raise ValueError("The provided pattern mode for LCD is invalid")
+
+    def update_center(self, change_x, change_y):
+        self.x_center += change_x
+        self.y_center += change_y
+
+        print(f"New position: ({self.x_center}, {self.y_center})")
 
     def _send(self, text):
         self.arduino_serial.write(bytes(text + '\n', 'utf-8'))

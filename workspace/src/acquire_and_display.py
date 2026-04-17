@@ -108,6 +108,11 @@ class LCDControlThread(QThread):
         self._lcd_mode = LCDMode.CIRCULAR
         self._update_pending = True
 
+    @pyqtSlot()
+    def trigger_update_pos(self, change_x, change_y):
+        self._lcd_controller.update_center(change_x, change_y)
+        self._update_pending = True
+
     def run(self):
         while self._run_flag:
             if self._update_pending:
@@ -184,6 +189,14 @@ class App(QWidget):
             self.lcd_thread.trigger_circular()
         elif event.key() == Qt.Key_R:
             self.lcd_thread.trigger_reverse()
+        elif event.key() == Qt.Key_W:
+            self.lcd_thread.trigger_update_pos(1, 0)
+        elif event.key() == Qt.Key_S:
+            self.lcd_thread.trigger_update_pos(-1, 0)
+        elif event.key() == Qt.Key_A:
+            self.lcd_thread.trigger_update_pos(0, -1)
+        elif event.key() == Qt.Key_D:
+            self.lcd_thread.trigger_update_pos(0, 1)
         else:
             pass
 
