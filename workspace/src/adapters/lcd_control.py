@@ -17,7 +17,7 @@ def send_and_receive(arduino_serial, text):
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
         self.arduino_serial = serial.Serial(port=port, baudrate=9600, timeout=.1)
-        self.x_center = 64
+        self.x_center = 66
         self.y_center = 78
 
     ## TODO
@@ -44,6 +44,8 @@ class LCDController:
 
     def _send(self, text):
         self.arduino_serial.write(bytes(text + '\n', 'utf-8'))
+        line = self.arduino_serial.readline().decode('utf-8').rstrip()
+        assert line.startswith('0'), f"{line}"
 
     def close(self):
         self.arduino_serial.close()

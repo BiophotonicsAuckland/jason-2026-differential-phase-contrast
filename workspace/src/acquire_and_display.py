@@ -1,3 +1,4 @@
+from queue import Queue
 import time
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
@@ -26,8 +27,17 @@ class VideoThread(QThread):
         self.camera = PySpinCamera(0)
         self.camera.open()
         self._exit_ready_flag = threading.Event()
-        self.save_flag = False
-        self.reload_flag = False
+        self._task_queue = Queue()
+    
+    @pyqtSlot()
+    def trigger(self, function, blocking=False):
+        finished = threading.Event()
+        def f(*args):
+            function(*args)
+            finished.set()
+        self._task_queue.put(f)
+        if blocking:
+            finished.wait()
 
     def run(self):
         if self.camera.cam is None:
@@ -38,13 +48,9 @@ class VideoThread(QThread):
         while self._run_flag:
             img = self.camera.get_image_data()
 
-            if self.save_flag:
-                self.save_flag = False
-                self._save_image(img)
-
-            if self.reload_flag:
-                self.reload_flag = False
-                self.camera.configure()
+            if not self._task_queue.empty():
+                task = self._task_queue.get()
+                task(img)
 
             if img is not None:
                 h, w = img.shape
@@ -57,15 +63,15 @@ class VideoThread(QThread):
         self._exit_ready_flag.set()
 
     @pyqtSlot()
-    def trigger_save(self):
-        self.save_flag = True
+    def trigger_save(self, blocking=False):
+        self.trigger(self._save_image, blocking)
 
     @pyqtSlot()
     def trigger_reload(self):
-        self.reload_flag = True
+        self._task_queue.put(lambda *args: self.camera.configure())
 
     def _save_image(self, image):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         image_path = os.path.join(
             AppConfigManager.config.camera.image_save_dir, f"image_{timestamp}.png")
         cv2.imwrite(image_path, image)
@@ -87,37 +93,60 @@ class LCDControlThread(QThread):
         self._lcd_mode = LCDMode.CIRCULAR
         self._run_flag = True
         self._exit_ready_flag = threading.Event()
-
-    @pyqtSlot()    
-    def trigger_reverse(self):
-        self._reverse = not self._reverse
-        self._update_pending = True
+        self._update_queue = Queue()
+        self.update_callback = lambda: self._lcd_controller.update(self._lcd_mode, 0, 50, self._reverse)
 
     @pyqtSlot()
-    def trigger_split_x(self):
-        self._lcd_mode = LCDMode.SPLIT_IN_X
-        self._update_pending = True
+    def trigger(self, function, blocking=False):
+        finished = threading.Event()
+        def f():
+            function()
+            finished.set()
+        self._update_queue.put(f)
+        if blocking:
+            finished.wait()
 
     @pyqtSlot()
-    def trigger_split_y(self):
-        self._lcd_mode = LCDMode.SPLIT_IN_Y
-        self._update_pending = True
+    def trigger_reverse(self, blocking=False):
+        def f():
+            self._reverse = not self._reverse
+            self.update_callback()
+        self.trigger(f, blocking)
+        
 
     @pyqtSlot()
-    def trigger_circular(self):
-        self._lcd_mode = LCDMode.CIRCULAR
-        self._update_pending = True
+    def trigger_split_x(self, blocking=False):
+        def f():
+            self._lcd_mode = LCDMode.SPLIT_IN_X
+            self.update_callback()
+        self.trigger(f, blocking)
+
+    @pyqtSlot()
+    def trigger_split_y(self, blocking=False):
+        def f():
+            self._lcd_mode = LCDMode.SPLIT_IN_Y
+            self.update_callback()
+        self.trigger(f, blocking)
+
+    @pyqtSlot()
+    def trigger_circular(self, blocking=False):
+        def f():
+            self._lcd_mode = LCDMode.CIRCULAR
+            self.update_callback()
+        self.trigger(f, blocking)
 
     @pyqtSlot()
     def trigger_update_pos(self, change_x, change_y):
-        self._lcd_controller.update_center(change_x, change_y)
-        self._update_pending = True
-
+        def f():
+            self._lcd_controller.update_center(change_x, change_y)
+            self.update_callback()
+        self.trigger(f)
+    
     def run(self):
         while self._run_flag:
-            if self._update_pending:
-                self._update_pending = False
-                self._lcd_controller.update(self._lcd_mode, 0, 50, self._reverse)
+            if not self._update_queue.empty():
+                task = self._update_queue.get()
+                task()
             time.sleep(0.3)
         self._exit_ready_flag.set()
 
@@ -127,6 +156,27 @@ class LCDControlThread(QThread):
         self._exit_ready_flag.wait()
         self._lcd_controller.close()
         self.wait()
+
+class CaptureThread(QThread):
+    def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):
+        super().__init__()
+        self.video_thread = video_thread
+        self.lcd_thread = lcd_thread
+
+    def run(self):
+        delay = 0.5  # there is delay on camera capturing, approximately 0.4s in my laptop
+        self.lcd_thread.trigger_split_x(True)
+        time.sleep(delay)
+        self.video_thread.trigger_save(True)
+        self.lcd_thread.trigger_reverse(True)
+        time.sleep(delay)
+        self.video_thread.trigger_save(True)
+        self.lcd_thread.trigger_split_y(True)
+        time.sleep(delay)
+        self.video_thread.trigger_save(True)
+        self.lcd_thread.trigger_reverse(True)
+        time.sleep(delay)
+        self.video_thread.trigger_save(True)
 
 class App(QWidget):
     def __init__(self):
@@ -151,6 +201,8 @@ class App(QWidget):
 
         self.lcd_thread = LCDControlThread()
         self.lcd_thread.start()
+
+        self.thread = None
 
         layout = QHBoxLayout()
         menu_layout = QVBoxLayout()
@@ -197,6 +249,9 @@ class App(QWidget):
             self.lcd_thread.trigger_update_pos(0, -1)
         elif event.key() == Qt.Key_D:
             self.lcd_thread.trigger_update_pos(0, 1)
+        elif event.key() == Qt.Key_O:
+            self.thread = CaptureThread(self.video_thread, self.lcd_thread)
+            self.thread.start()
         else:
             pass
 
