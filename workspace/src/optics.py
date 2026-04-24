@@ -3,7 +3,7 @@ import numpy as np
 
 def standardize(img):
     diff = img.max() - img.min()
-    return ((img - img.min()) * 255 // diff).astype('uint8')
+    return ((img - img.min()) * 65535 // diff).astype('uint16')
 
 
 def differential_phase_contrast(illumination1, illumination2):
