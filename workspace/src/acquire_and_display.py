@@ -6,6 +6,7 @@ from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPushButton, QWidget
 import numpy as np
 import cv2
+from pathlib import Path
 
 import os
 import sys
@@ -15,6 +16,7 @@ from datetime import datetime
 from camera import PySpinCamera
 from core.config import AppConfigManager
 from adapters.lcd_control import LCDMode, LCDController
+from optics import differential_phase_contrast, fdspi, standardize
 
 
 class VideoThread(QThread):
@@ -32,8 +34,8 @@ class VideoThread(QThread):
     @pyqtSlot()
     def trigger(self, function, blocking=False):
         finished = threading.Event()
-        def f(*args):
-            function(*args)
+        def f(*args, **kwargs):
+            function(*args, **kwargs)
             finished.set()
         self._task_queue.put(f)
         if blocking:
@@ -63,18 +65,24 @@ class VideoThread(QThread):
         self._exit_ready_flag.set()
 
     @pyqtSlot()
-    def trigger_save(self, blocking=False):
-        self.trigger(self._save_image, blocking)
+    def trigger_save(self, image_dir=None, image_name=None, blocking=False):
+        self.trigger(lambda im: self._save_image(im, image_name=image_name, image_dir=image_dir), blocking)
 
     @pyqtSlot()
     def trigger_reload(self):
         self._task_queue.put(lambda *args: self.camera.configure())
 
-    def _save_image(self, image):
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        image_path = os.path.join(
-            AppConfigManager.config.camera.image_save_dir, f"image_{timestamp}.png")
-        cv2.imwrite(image_path, image)
+    def _save_image(self, image, image_name=None, image_dir=None):
+        if image_name is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            image_name = f"image_{timestamp}"
+
+        if image_dir is None:
+            image_dir = '.'
+        
+        image_path = Path(AppConfigManager.config.camera.image_save_dir)/image_dir
+        os.makedirs(image_path, exist_ok=True)
+        cv2.imwrite(image_path/f"{image_name}.png", image)
         # cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
     def stop(self):
@@ -147,7 +155,7 @@ class LCDControlThread(QThread):
             if not self._update_queue.empty():
                 task = self._update_queue.get()
                 task()
-            time.sleep(0.3)
+            time.sleep(0.2)
         self._exit_ready_flag.set()
 
     def stop(self):
@@ -164,19 +172,36 @@ class CaptureThread(QThread):
         self.lcd_thread = lcd_thread
 
     def run(self):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         delay = 0.5  # there is delay on camera capturing, approximately 0.4s in my laptop
         self.lcd_thread.trigger_split_x(True)
         time.sleep(delay)
-        self.video_thread.trigger_save(True)
+        self.video_thread.trigger_save(timestamp, '02_bottom', blocking=True)
         self.lcd_thread.trigger_reverse(True)
         time.sleep(delay)
-        self.video_thread.trigger_save(True)
+        self.video_thread.trigger_save(timestamp, '01_top', blocking=True)
         self.lcd_thread.trigger_split_y(True)
         time.sleep(delay)
-        self.video_thread.trigger_save(True)
+        self.video_thread.trigger_save(timestamp, '03_right', blocking=True)
         self.lcd_thread.trigger_reverse(True)
         time.sleep(delay)
-        self.video_thread.trigger_save(True)
+        self.video_thread.trigger_save(timestamp, '04_left', blocking=True)
+        
+        working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
+        
+        top_im = cv2.imread(working_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
+        bottom_im = cv2.imread(working_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
+        left_im = cv2.imread(working_dir/'04_left.png', cv2.IMREAD_UNCHANGED)
+        right_im = cv2.imread(working_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
+
+        vertical_res = differential_phase_contrast(top_im, bottom_im)
+        cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
+        horizontal_res = differential_phase_contrast(right_im, left_im)
+        cv2.imwrite(working_dir/"horizontal.png", standardize(horizontal_res))
+        
+        res = fdspi(vertical_res, -horizontal_res)
+        cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
+        cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - cv2.imread(AppConfigManager.config.camera.image_save_dir/"background"/"phase_diagram.png", cv2.IMREAD_UNCHANGED)))
 
 class App(QWidget):
     def __init__(self):
