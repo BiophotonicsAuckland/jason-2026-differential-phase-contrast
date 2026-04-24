@@ -38,13 +38,9 @@ def fdspi(phase_grad_x, phase_grad_y):
 
 
 if __name__ == "__main__":
-    # print(fdspi(
-    #     np.array([[1,2],[3,4]]),
-    #     np.array([[4,3],[2,1]])
-    # ))
     import cv2
     from pathlib import Path
-    im_dir = Path("images")/"20260424_031131_110936"
+    im_dir = Path("images")/"20260424_030609_248379"
     top_im = cv2.imread(im_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
     bottom_im = cv2.imread(im_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
     vertical_res = differential_phase_contrast(top_im, bottom_im)
@@ -53,5 +49,8 @@ if __name__ == "__main__":
     right_im = cv2.imread(im_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
     horizontal_res = differential_phase_contrast(right_im, left_im)
     cv2.imwrite(im_dir/"horizontal.png", standardize(horizontal_res))
-    res = fdspi(vertical_res[:2000, :2000], -horizontal_res[:2000, :2000])
+    res = fdspi(vertical_res, -horizontal_res)
+    # np.save(im_dir/"phase.npy", res)
     cv2.imwrite(im_dir/"phase_diagram.png", standardize(res))
+    background = np.load(im_dir/'..'/"background"/"phase.npy")
+    cv2.imwrite(im_dir/"corrected_phase_diagram.png", standardize(res - background))

@@ -201,7 +201,7 @@ class CaptureThread(QThread):
         
         res = fdspi(vertical_res, -horizontal_res)
         cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
-        cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - cv2.imread(AppConfigManager.config.camera.image_save_dir/"background"/"phase_diagram.png", cv2.IMREAD_UNCHANGED)))
+        cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
 
 class App(QWidget):
     def __init__(self):
