@@ -10,8 +10,7 @@ services:
       # - ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY}:/run/user/1000/${WAYLAND_DISPLAY}
       # X11 Forwarding: Map the host's X11 socket
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - /dev/dri:/dev/dri
-      - /dev/bus/usb:/dev/bus/usb
+      - /dev:/dev:rw
       - ./workspace:/workspace:rw
     devices:
       - /dev/input:/dev/input
