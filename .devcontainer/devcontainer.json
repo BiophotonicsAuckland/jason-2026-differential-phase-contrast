@@ -17,7 +17,7 @@
     "source=/dev/dri,target=/dev/dri,type=bind",
     
     // USB access
-    "source=/dev/bus/usb,target=/dev/bus/usb,type=bind",
+    "source=/dev,target=/dev,type=bind",
     
     // Workspace
     "source=${localWorkspaceFolder},target=/workspace,type=bind"
