@@ -17,8 +17,8 @@ def send_and_receive(arduino_serial, text):
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
         self.arduino_serial = serial.Serial(port=port, baudrate=9600, timeout=.1)
-        self.x_center = 66
-        self.y_center = 78
+        self.x_center = 64
+        self.y_center = 77
 
     ## TODO
     def configure(self):

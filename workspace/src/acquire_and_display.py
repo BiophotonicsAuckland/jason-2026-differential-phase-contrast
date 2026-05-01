@@ -71,6 +71,10 @@ class VideoThread(QThread):
     @pyqtSlot()
     def trigger_save(self, image_dir=None, image_name=None, blocking=False):
         self.trigger(lambda im: self._save_image(im, image_name=image_name, image_dir=image_dir), blocking)
+    
+    @pyqtSlot()
+    def trigger_measure_brightness(self, result_queue):
+        self.trigger(lambda im: result_queue.put((im/65335).sum()), True)
 
     @pyqtSlot()
     def trigger_reload(self):
@@ -152,7 +156,7 @@ class LCDControlThread(QThread):
         def f():
             self._lcd_controller.update_center(change_x, change_y)
             self.update_callback()
-        self.trigger(f)
+        self.trigger(f, True)
     
     def run(self):
         while self._run_flag:
@@ -201,6 +205,67 @@ class CaptureThread(QThread):
         res = fdspi(vertical_res, -horizontal_res)
         cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
         cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
+
+class AdjustThread(QThread):
+    def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):
+        super().__init__()
+        self.video_thread = video_thread
+        self.lcd_thread = lcd_thread
+
+    def _measure_delta_brightness(self):
+        result_queue = Queue(1)
+        delta_brightness = 0
+        
+        self.video_thread.trigger_measure_brightness(result_queue)
+        delta_brightness = result_queue.get()
+        self.lcd_thread.trigger_reverse(True)
+        self.video_thread.trigger_measure_brightness(result_queue)
+        delta_brightness -= result_queue.get()
+        self.lcd_thread.trigger_reverse(True)
+
+        return delta_brightness
+    
+    def run(self):
+        self.lcd_thread.trigger_split_x(True)
+        delta_brightness = self._measure_delta_brightness()
+
+        while delta_brightness > 0:
+            self.lcd_thread.trigger_update_pos(1,0)
+            delta_brightness = self._measure_delta_brightness()
+            print(f"Brightness: {delta_brightness}")
+
+        while delta_brightness < 0:
+            self.lcd_thread.trigger_update_pos(-1,0)
+            delta_brightness = self._measure_delta_brightness()
+            print(f"Brightness: {delta_brightness}")
+
+        self.lcd_thread.trigger_update_pos(1,0)
+        delta_brightness2 = self._measure_delta_brightness()
+        print(f"Brightness: {delta_brightness2}")
+
+        if abs(delta_brightness2) > abs(delta_brightness):
+            self.lcd_thread.trigger_update_pos(-1,0)
+
+        self.lcd_thread.trigger_split_y(True)
+        delta_brightness = self._measure_delta_brightness()
+
+        while delta_brightness > 0:
+            self.lcd_thread.trigger_update_pos(0,1)
+            delta_brightness = self._measure_delta_brightness()
+            print(f"Brightness: {delta_brightness}")
+
+        while delta_brightness < 0:
+            self.lcd_thread.trigger_update_pos(0,-1)
+            delta_brightness = self._measure_delta_brightness()
+            print(f"Brightness: {delta_brightness}")
+
+        self.lcd_thread.trigger_update_pos(0,1)
+        delta_brightness2 = self._measure_delta_brightness()
+        print(f"Brightness: {delta_brightness2}")
+
+        if abs(delta_brightness2) > abs(delta_brightness):
+            self.lcd_thread.trigger_update_pos(0,-1)
+
 
 class App(QWidget):
     def __init__(self):
@@ -275,6 +340,9 @@ class App(QWidget):
             self.lcd_thread.trigger_update_pos(0, 1)
         elif event.key() == Qt.Key_O:
             self.thread = CaptureThread(self.video_thread, self.lcd_thread)
+            self.thread.start()
+        elif event.key() == Qt.Key_Z:
+            self.thread = AdjustThread(self.video_thread, self.lcd_thread)
             self.thread.start()
         else:
             pass
