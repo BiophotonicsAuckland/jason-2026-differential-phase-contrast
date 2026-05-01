@@ -48,10 +48,14 @@ class VideoThread(QThread):
             return
 
         while self._run_flag:
-            img = self.camera.get_image_data()
-
+            task = None
+            ## Fetch task first to make sure the image is never captured before the task
             if not self._task_queue.empty():
                 task = self._task_queue.get()
+            
+            img = self.camera.get_image_data()
+
+            if task is not None:
                 task(img)
 
             if img is not None:
@@ -173,18 +177,13 @@ class CaptureThread(QThread):
 
     def run(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        delay = 0.5  # there is delay on camera capturing, approximately 0.4s in my laptop
         self.lcd_thread.trigger_split_x(True)
-        time.sleep(delay)
         self.video_thread.trigger_save(timestamp, '02_bottom', blocking=True)
         self.lcd_thread.trigger_reverse(True)
-        time.sleep(delay)
         self.video_thread.trigger_save(timestamp, '01_top', blocking=True)
         self.lcd_thread.trigger_split_y(True)
-        time.sleep(delay)
         self.video_thread.trigger_save(timestamp, '03_right', blocking=True)
         self.lcd_thread.trigger_reverse(True)
-        time.sleep(delay)
         self.video_thread.trigger_save(timestamp, '04_left', blocking=True)
         
         working_dir = AppConfigManager.config.camera.image_save_dir/timestamp

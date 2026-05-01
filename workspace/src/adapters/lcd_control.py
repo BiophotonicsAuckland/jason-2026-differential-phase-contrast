@@ -44,8 +44,19 @@ class LCDController:
 
     def _send(self, text):
         self.arduino_serial.write(bytes(text + '\n', 'utf-8'))
-        line = self.arduino_serial.readline().decode('utf-8').rstrip()
-        assert line.startswith('0'), f"{line}"
+        line = ''
+        while not line.startswith('0'):
+            line = self.arduino_serial.readline().decode('utf-8').rstrip()
+            time.sleep(0.1)
 
     def close(self):
         self.arduino_serial.close()
+
+if __name__ == "__main__":
+    lcd_controller = LCDController()
+    import time
+    time.sleep(2)
+    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, True)
+    # time.sleep(0.1)
+    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, False)
+    lcd_controller.close()
