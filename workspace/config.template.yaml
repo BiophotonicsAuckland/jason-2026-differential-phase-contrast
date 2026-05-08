@@ -2,5 +2,5 @@ version: 0.0.1
 camera:
   image_save_dir: 'images'
   attributes:
-    AcquisitionFrameRate: 15
+    AcquisitionFrameRate: 60
     ExposureTime: 1000

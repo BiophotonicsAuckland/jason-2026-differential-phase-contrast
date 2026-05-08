@@ -1,4 +1,5 @@
 from queue import Queue
+import queue
 import time
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
@@ -41,6 +42,15 @@ class VideoThread(QThread):
         if blocking:
             finished.wait()
 
+    @pyqtSlot()
+    def trigger_pseudo_block(self, function):
+        finished = threading.Event()
+        def f(*args, **kwargs):
+            finished.set()
+            function(*args, **kwargs)
+        self._task_queue.put(f)
+        finished.wait()
+
     def run(self):
         if self.camera.cam is None:
             self._exit_ready_flag.set()
@@ -50,13 +60,16 @@ class VideoThread(QThread):
         while self._run_flag:
             task = None
             ## Fetch task first to make sure the image is never captured before the task
-            if not self._task_queue.empty():
-                task = self._task_queue.get()
+            try:
+                task = self._task_queue.get(timeout=0.1)
+            except queue.Empty:
+                pass
             
             img = self.camera.get_image_data()
 
             if task is not None:
                 task(img)
+                # threading.Thread(target=lambda: task(img)).start()
 
             if img is not None:
                 h, w = img.shape
@@ -70,7 +83,11 @@ class VideoThread(QThread):
 
     @pyqtSlot()
     def trigger_save(self, image_dir=None, image_name=None, blocking=False):
-        self.trigger(lambda im: self._save_image(im, image_name=image_name, image_dir=image_dir), blocking)
+        self.trigger_pseudo_block(lambda im: self._save_image(im, image_name=image_name, image_dir=image_dir))
+
+    @pyqtSlot()
+    def trigger_put_queue(self, im_queue, blocking=False):
+        self.trigger_pseudo_block(lambda im: im_queue.put(im))
     
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
@@ -91,7 +108,7 @@ class VideoThread(QThread):
         image_path = Path(AppConfigManager.config.camera.image_save_dir)/image_dir
         os.makedirs(image_path, exist_ok=True)
         cv2.imwrite(image_path/f"{image_name}.png", image)
-        # cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
+        cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
     def stop(self):
         """Sets run flag to False and waits for thread to finish"""
@@ -110,7 +127,7 @@ class LCDControlThread(QThread):
         self._run_flag = True
         self._exit_ready_flag = threading.Event()
         self._update_queue = Queue()
-        self.update_callback = lambda: self._lcd_controller.update(self._lcd_mode, 0, 50, self._reverse)
+        self.update_callback = lambda: self._lcd_controller.update(self._lcd_mode, 0, 20, self._reverse)
 
     @pyqtSlot()
     def trigger(self, function, blocking=False):
@@ -160,10 +177,11 @@ class LCDControlThread(QThread):
     
     def run(self):
         while self._run_flag:
-            if not self._update_queue.empty():
-                task = self._update_queue.get()
+            try:
+                task = self._update_queue.get(timeout=2)
                 task()
-            time.sleep(0.2)
+            except queue.Empty:
+                continue
         self._exit_ready_flag.set()
 
     def stop(self):
@@ -180,31 +198,46 @@ class CaptureThread(QThread):
         self.lcd_thread = lcd_thread
 
     def run(self):
+        im_queue = queue.Queue()
+        start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         self.lcd_thread.trigger_split_x(True)
-        self.video_thread.trigger_save(timestamp, '02_bottom', blocking=True)
+        print(time.time()*1000-start_time)
+        self.video_thread.trigger_put_queue(im_queue)
+        print(time.time()*1000-start_time)
         self.lcd_thread.trigger_reverse(True)
-        self.video_thread.trigger_save(timestamp, '01_top', blocking=True)
+        print(time.time()*1000-start_time)
+        self.video_thread.trigger_put_queue(im_queue)
+        print(time.time()*1000-start_time)
         self.lcd_thread.trigger_split_y(True)
-        self.video_thread.trigger_save(timestamp, '03_right', blocking=True)
+        self.video_thread.trigger_put_queue(im_queue)
         self.lcd_thread.trigger_reverse(True)
-        self.video_thread.trigger_save(timestamp, '04_left', blocking=True)
-        
+        self.video_thread.trigger_put_queue(im_queue)
+        print(time.time()*1000-start_time)
         working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
-        
-        top_im = cv2.imread(working_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
-        bottom_im = cv2.imread(working_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
-        left_im = cv2.imread(working_dir/'04_left.png', cv2.IMREAD_UNCHANGED)
-        right_im = cv2.imread(working_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
+        os.makedirs(working_dir, exist_ok=True)
 
-        vertical_res = differential_phase_contrast(top_im, bottom_im)
-        cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
-        horizontal_res = differential_phase_contrast(right_im, left_im)
-        cv2.imwrite(working_dir/"horizontal.png", standardize(horizontal_res))
+        bottom_im = im_queue.get()
+        top_im = im_queue.get()
+        right_im = im_queue.get()
+        left_im = im_queue.get()
+
+        cv2.imwrite(working_dir/"brightfield_tb.jpg", standardize(bottom_im*1.+top_im))
+        cv2.imwrite(working_dir/"brightfield_lr.jpg", standardize(left_im*1.+right_im))
         
-        res = fdspi(vertical_res, -horizontal_res)
-        cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
-        cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
+        # top_im = cv2.imread(working_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
+        # bottom_im = cv2.imread(working_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
+        # left_im = cv2.imread(working_dir/'04_left.png', cv2.IMREAD_UNCHANGED)
+        # right_im = cv2.imread(working_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
+
+        # vertical_res = differential_phase_contrast(top_im, bottom_im)
+        # cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
+        # horizontal_res = differential_phase_contrast(right_im, left_im)
+        # cv2.imwrite(working_dir/"horizontal.png", standardize(horizontal_res))
+        
+        # res = fdspi(vertical_res, -horizontal_res)
+        # cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
+        # cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
 
 class AdjustThread(QThread):
     def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):

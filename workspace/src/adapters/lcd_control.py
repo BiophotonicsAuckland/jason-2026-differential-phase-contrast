@@ -16,7 +16,7 @@ def send_and_receive(arduino_serial, text):
 
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
-        self.arduino_serial = serial.Serial(port=port, baudrate=9600, timeout=.1)
+        self.arduino_serial = serial.Serial(port=port, baudrate=115200, timeout=1)
         self.x_center = 64
         self.y_center = 77
 
@@ -47,7 +47,7 @@ class LCDController:
         line = ''
         while not line.startswith('0'):
             line = self.arduino_serial.readline().decode('utf-8').rstrip()
-            time.sleep(0.1)
+        # time.sleep(0.01) #TODO there seems to be some painting delay
 
     def close(self):
         self.arduino_serial.close()

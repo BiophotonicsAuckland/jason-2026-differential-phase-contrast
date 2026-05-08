@@ -47,7 +47,8 @@ class PySpinCamera():
         self.configure()
         # self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 3)
         # self._set_attribute_value(self.cam.DeviceLinkThroughputLimit, 200000000)
-        self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
+        # self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
+        self._set_attribute_value(self.cam.PixelFormat, 'Mono8')
 
         
         # print(self.cam.TLStream.StreamBufferCountMode.GetValue())
