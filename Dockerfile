@@ -53,6 +53,7 @@ RUN python3 -m venv /opt/venv \
         pyyaml \
         opencv-python-headless \
         pyserial \
+        pyfftw \
         /tmp/lib/spinnaker-4.3.0.189-amd64/spinnaker_python-4.3.0.189-cp310-cp310-linux_x86_64.whl
 
 # CMD ["/bin/sh", "-c"]
