@@ -222,8 +222,8 @@ class CaptureThread(QThread):
         right_im = im_queue.get()
         left_im = im_queue.get()
 
-        cv2.imwrite(working_dir/"brightfield_tb.jpg", standardize(bottom_im*1.+top_im))
-        cv2.imwrite(working_dir/"brightfield_lr.jpg", standardize(left_im*1.+right_im))
+        cv2.imwrite(working_dir/"brightfield_tb.tiff", standardize(bottom_im*1.+top_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        cv2.imwrite(working_dir/"brightfield_lr.tiff", standardize(left_im*1.+right_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
         
         # top_im = cv2.imread(working_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
         # bottom_im = cv2.imread(working_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)

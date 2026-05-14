@@ -43,16 +43,23 @@ class PySpinCamera():
         self._set_attribute_value(
             self.cam.TLStream.StreamBufferHandlingMode, 'NewestOnly')
         self._set_attribute_value(self.cam.AcquisitionMode, 'Continuous')
+        self._set_attribute_value(self.cam.OffsetX, 0)
+        self._set_attribute_value(self.cam.OffsetY, 0)
+        self._set_attribute_value(self.cam.Width, 2048)
+        self._set_attribute_value(self.cam.Height, 2048)
+        self._set_attribute_value(self.cam.OffsetX, 200)
+        self._set_attribute_value(self.cam.OffsetY, 0)
+        
+        self._set_attribute_value(self.cam.PixelFormat, 'Mono16')
+        # self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
         self._set_attribute_value(self.cam.AcquisitionFrameRateEnable, True)
         self.configure()
         # self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 3)
         # self._set_attribute_value(self.cam.DeviceLinkThroughputLimit, 200000000)
-        # self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
-        self._set_attribute_value(self.cam.PixelFormat, 'Mono8')
 
         
         # print(self.cam.TLStream.StreamBufferCountMode.GetValue())
-        # print(PySpinCamera._print_node(self.cam.TLStream.StreamBufferCountMode))
+        # print(PySpinCamera._print_node(self.cam.PixelFormat))
         # print(self.cam.TLStream.StreamBufferCountManual.GetMin())
         # print(self.cam.TLStream.StreamBufferCountManual.GetMax())
         
