@@ -91,6 +91,7 @@ class VideoThread(QThread):
     
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
+        time.sleep(0.4)
         self.trigger(lambda im: result_queue.put((im/65335).sum()), True)
 
     @pyqtSlot()
