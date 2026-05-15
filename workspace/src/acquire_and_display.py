@@ -225,10 +225,10 @@ class CaptureThread(QThread):
         cv2.imwrite(working_dir/"brightfield_tb.tiff", standardize(bottom_im*1.+top_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
         cv2.imwrite(working_dir/"brightfield_lr.tiff", standardize(left_im*1.+right_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
         
-        # top_im = cv2.imread(working_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
-        # bottom_im = cv2.imread(working_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
-        # left_im = cv2.imread(working_dir/'04_left.png', cv2.IMREAD_UNCHANGED)
-        # right_im = cv2.imread(working_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
+        cv2.imwrite(working_dir/'01_top.tiff', top_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        cv2.imwrite(working_dir/'02_bottom.tiff', bottom_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        cv2.imwrite(working_dir/'04_left.tiff', left_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        cv2.imwrite(working_dir/'03_right.tiff', right_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
 
         # vertical_res = differential_phase_contrast(top_im, bottom_im)
         # cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
