@@ -2,17 +2,22 @@ import serial
 import time
 from enum import Enum, auto
 
+
 class LCDMode(Enum):
     SPLIT_IN_X = auto()
     SPLIT_IN_Y = auto()
     CIRCULAR = auto()
+    DPC_PATTERN = auto()
 
-## TODO
+# TODO
+
+
 def send_and_receive(arduino_serial, text):
     # Encode string to bytes and add newline
     arduino_serial.write(bytes(text + '\n', 'utf-8'))
-    time.sleep(0.05) # Brief pause for Arduino to process
+    time.sleep(0.05)  # Brief pause for Arduino to process
     return arduino_serial.readline().decode('utf-8').strip()
+
 
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
@@ -20,7 +25,7 @@ class LCDController:
         self.x_center = 64
         self.y_center = 77
 
-    ## TODO
+    # TODO
     def configure(self):
         self.x_center = 0
         self.y_center = 0
@@ -28,11 +33,15 @@ class LCDController:
     def update(self, mode, inner_radius, outer_radius, reverse=False):
         match mode:
             case LCDMode.SPLIT_IN_X:
-                self._send(f"0,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(f"0,{-self.x_center},{self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"0,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(
+                    f"0,{-self.x_center},{self.y_center},{inner_radius},{outer_radius}")
             case LCDMode.SPLIT_IN_Y:
-                self._send(f"1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(f"1,{self.x_center},{-self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(
+                    f"1,{self.x_center},{-self.y_center},{inner_radius},{outer_radius}")
             case LCDMode.CIRCULAR:
                 self._send(f"-1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}")
+            case LCDMode.DPC_PATTERN:
+                self._send(f"4,{self.x_center},{self.y_center},{inner_radius},{outer_radius}")
             case _:
                 raise ValueError("The provided pattern mode for LCD is invalid")
 
@@ -47,10 +56,13 @@ class LCDController:
         line = ''
         while not line.startswith('0'):
             line = self.arduino_serial.readline().decode('utf-8').rstrip()
+            time.sleep(0.1)
+            print(line)
         # time.sleep(0.01) #TODO there seems to be some painting delay
 
     def close(self):
         self.arduino_serial.close()
+
 
 if __name__ == "__main__":
     lcd_controller = LCDController()

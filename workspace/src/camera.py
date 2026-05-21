@@ -3,6 +3,7 @@ import numpy as np
 
 from core.config import AppConfigManager
 
+
 class PySpinCamera():
     def __init__(self, camera_idx=0):
         self.camera_idx = camera_idx
@@ -40,29 +41,35 @@ class PySpinCamera():
         for i in [self.cam.AutoExposureTargetGreyValueAuto, self.cam.ExposureAuto, self.cam.GainAuto]:
             i.SetValue(0)
 
-        self._set_attribute_value(
-            self.cam.TLStream.StreamBufferHandlingMode, 'NewestOnly')
+        # self._set_attribute_value(
+        #     self.cam.TLStream.StreamBufferHandlingMode, 'NewestOnly')
+        # self._set_attribute_value(self.cam.AcquisitionMode, 'Continuous')
+        self._set_attribute_value(self.cam.TriggerMode, 'Off')
+        self._set_attribute_value(self.cam.TriggerSource, 'Line0')
+        self._set_attribute_value(self.cam.TriggerOverlap, 'ReadOut')
         self._set_attribute_value(self.cam.AcquisitionMode, 'Continuous')
+        self._set_attribute_value(self.cam.TriggerMode, 'On')
+        self._set_attribute_value(self.cam.TLStream.StreamBufferCountMode, 'Manual')
+        self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 50)
+        self._set_attribute_value(self.cam.TLStream.StreamBufferHandlingMode, 'OldestFirst')
         self._set_attribute_value(self.cam.OffsetX, 0)
         self._set_attribute_value(self.cam.OffsetY, 0)
         self._set_attribute_value(self.cam.Width, 2048)
         self._set_attribute_value(self.cam.Height, 2048)
         self._set_attribute_value(self.cam.OffsetX, 200)
         self._set_attribute_value(self.cam.OffsetY, 0)
-        
+
         self._set_attribute_value(self.cam.PixelFormat, 'Mono16')
-        # self._set_attribute_value(self.cam.PixelFormat, 'Mono12p')
+        # self._set_attribute_value(self.cam.PixelFormat, 'Mono8')
         self._set_attribute_value(self.cam.AcquisitionFrameRateEnable, True)
         self.configure()
         # self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 3)
         # self._set_attribute_value(self.cam.DeviceLinkThroughputLimit, 200000000)
 
-        
-        # print(self.cam.TLStream.StreamBufferCountMode.GetValue())
+        print(self.cam.TLStream.StreamAnnouncedBufferCount.GetValue())
         # print(PySpinCamera._print_node(self.cam.PixelFormat))
         # print(self.cam.TLStream.StreamBufferCountManual.GetMin())
         # print(self.cam.TLStream.StreamBufferCountManual.GetMax())
-        
 
         # print(print_node(self.cam.AutoExposureTargetGreyValueAuto))
         # print(print_node(self.cam.ExposureAuto))
@@ -91,23 +98,28 @@ class PySpinCamera():
             self.cam.BeginAcquisition()
 
         image_data = None
-        image_result = self.cam.GetNextImage(1000)
+        try:
+            image_result = self.cam.GetNextImage(1000)
 
-        if image_result.IsIncomplete():
-            print(
-                f'Image incomplete with image status {image_result.GetImageStatus()}')
+            if image_result.IsIncomplete():
+                print(
+                    f'Image incomplete with image status {image_result.GetImageStatus()}')
+                image_result.Release()
+                return image_data
+
+            frame_id = image_result.GetFrameID()
+
+            if image_result.GetPixelFormatName() == 'Mono8':
+                image_data = image_result.GetNDArray()
+            else:
+                image_converted = self._img_processor.Convert(image_result, PySpin.PixelFormat_Mono16)
+                image_data = image_converted.GetNDArray()
+                image_converted.Release()
+
             image_result.Release()
-            return image_data
-        
-        if image_result.GetPixelFormatName()=='Mono8':
-            image_data = image_result.GetNDArray()
-        else:
-            image_converted = self._img_processor.Convert(image_result, PySpin.PixelFormat_Mono16)
-            image_data = image_converted.GetNDArray()
-            image_converted.Release()
-            
-        image_result.Release()
-        return image_data
+            return image_data, frame_id
+        except PySpin.SpinnakerException:
+            return None, 0
 
     def _set_attribute_value(self, attr, value):
         match value:

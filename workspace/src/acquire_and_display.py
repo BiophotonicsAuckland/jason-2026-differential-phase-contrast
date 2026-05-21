@@ -21,35 +21,19 @@ from optics import differential_phase_contrast, fdspi, standardize
 
 
 class VideoThread(QThread):
-    change_pixmap_signal = pyqtSignal(QImage)
     error_signal = pyqtSignal(str)
 
-    def __init__(self):
+    def __init__(self, batch_size=1):
         super().__init__()
         self._run_flag = True
         self.camera = PySpinCamera(0)
         self.camera.open()
-        self._exit_ready_flag = threading.Event()
-        self._task_queue = Queue()
-    
-    @pyqtSlot()
-    def trigger(self, function, blocking=False):
-        finished = threading.Event()
-        def f(*args, **kwargs):
-            function(*args, **kwargs)
-            finished.set()
-        self._task_queue.put(f)
-        if blocking:
-            finished.wait()
 
-    @pyqtSlot()
-    def trigger_pseudo_block(self, function):
-        finished = threading.Event()
-        def f(*args, **kwargs):
-            finished.set()
-            function(*args, **kwargs)
-        self._task_queue.put(f)
-        finished.wait()
+        self.batch_size = batch_size
+        self._exit_ready_flag = threading.Event()
+        self.img_queue = Queue()
+        self._img_batch = []
+        self._next_frame_id = 0
 
     def run(self):
         if self.camera.cam is None:
@@ -58,20 +42,52 @@ class VideoThread(QThread):
             return
 
         while self._run_flag:
+            img, frame_id = self.camera.get_image_data()
+            if img is not None:
+                if frame_id == self._next_frame_id:
+                    print(frame_id)
+                    self._img_batch.append(img)
+                    if len(self._img_batch) >= self.batch_size:
+                        self.img_queue.put(self._img_batch)
+                        self._img_batch = []
+                    self._next_frame_id += 1
+                elif frame_id > self._next_frame_id:
+                    self._img_batch = []
+                    self._next_frame_id = ((frame_id // self.batch_size) + 1) * self.batch_size
+        self._exit_ready_flag.set()
+
+    def get_image_queue(self):
+        return self.img_queue
+
+    def stop(self):
+        """Sets run flag to False and waits for thread to finish"""
+        self._run_flag = False
+        self._exit_ready_flag.wait()
+        self.camera.close()
+        self.wait()
+
+    def run_old(self):
+        if self.camera.cam is None:
+            self._exit_ready_flag.set()
+            self.error_signal.emit("Camera cannot be found")
+            return
+
+        while self._run_flag:
             task = None
-            ## Fetch task first to make sure the image is never captured before the task
+            # Fetch task first to make sure the image is never captured before the task
             try:
                 task = self._task_queue.get(timeout=0.1)
             except queue.Empty:
                 pass
-            
+
             img = self.camera.get_image_data()
 
-            if task is not None:
-                task(img)
-                # threading.Thread(target=lambda: task(img)).start()
-
-            if img is not None:
+            if img[0] is not None:
+                print(f"frame id: {img[1]}")
+                if task is not None:
+                    task(img[0])
+                    # threading.Thread(target=lambda: task(img)).start()
+                img = img[0]
                 h, w = img.shape
                 bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
                 convert_to_Qt_format = QImage(
@@ -88,7 +104,7 @@ class VideoThread(QThread):
     @pyqtSlot()
     def trigger_put_queue(self, im_queue, blocking=False):
         self.trigger_pseudo_block(lambda im: im_queue.put(im))
-    
+
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
         time.sleep(0.4)
@@ -105,18 +121,46 @@ class VideoThread(QThread):
 
         if image_dir is None:
             image_dir = '.'
-        
+
         image_path = Path(AppConfigManager.config.camera.image_save_dir)/image_dir
         os.makedirs(image_path, exist_ok=True)
         cv2.imwrite(image_path/f"{image_name}.png", image)
         cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
 
-    def stop(self):
-        """Sets run flag to False and waits for thread to finish"""
-        self._run_flag = False
-        self._exit_ready_flag.wait()
-        self.camera.close()
-        self.wait()
+
+class ImageHandlerThread(QThread):
+    change_pixmap_signal = pyqtSignal(QImage)
+
+    def __init__(self, image_queue: Queue[np.ndarray]):
+        super().__init__()
+        self._run_flag = True
+        self.image_queue = image_queue
+        self.process_fun = lambda imgs: imgs[0]
+
+    def run(self):
+        while self._run_flag:
+            try:
+                imgs = self.image_queue.get(timeout=1)
+            except queue.Empty:
+                continue
+
+            img = self.process_fun(imgs)
+            h, w = img.shape
+            bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
+            convert_to_Qt_format = QImage(
+                img.data, w, h, bytes_per_line,
+                QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
+            p = convert_to_Qt_format.scaled(1000, 680, Qt.KeepAspectRatio, )
+            self.change_pixmap_signal.emit(p)
+
+    def trigger_display_processing(self, mode: int):
+        if mode <= 4:
+            self.process_fun = lambda imgs: imgs[mode-1]
+        elif mode == 5:
+            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]))
+        elif mode == 6:
+            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[2], imgs[3]))
+
 
 class LCDControlThread(QThread):
     def __init__(self):
@@ -133,6 +177,7 @@ class LCDControlThread(QThread):
     @pyqtSlot()
     def trigger(self, function, blocking=False):
         finished = threading.Event()
+
         def f():
             function()
             finished.set()
@@ -142,11 +187,13 @@ class LCDControlThread(QThread):
 
     @pyqtSlot()
     def trigger_reverse(self, blocking=False):
+        if self._lcd_mode == LCDMode.DPC_PATTERN or self._lcd_mode == LCDMode.CIRCULAR:
+            return
+
         def f():
             self._reverse = not self._reverse
             self.update_callback()
         self.trigger(f, blocking)
-        
 
     @pyqtSlot()
     def trigger_split_x(self, blocking=False):
@@ -170,12 +217,19 @@ class LCDControlThread(QThread):
         self.trigger(f, blocking)
 
     @pyqtSlot()
+    def trigger_dpc_pattern(self, blocking=False):
+        def f():
+            self._lcd_mode = LCDMode.DPC_PATTERN
+            self.update_callback()
+        self.trigger(f, blocking)
+
+    @pyqtSlot()
     def trigger_update_pos(self, change_x, change_y):
         def f():
             self._lcd_controller.update_center(change_x, change_y)
             self.update_callback()
         self.trigger(f, True)
-    
+
     def run(self):
         while self._run_flag:
             try:
@@ -192,6 +246,7 @@ class LCDControlThread(QThread):
         self._lcd_controller.close()
         self.wait()
 
+
 class CaptureThread(QThread):
     def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):
         super().__init__()
@@ -199,46 +254,35 @@ class CaptureThread(QThread):
         self.lcd_thread = lcd_thread
 
     def run(self):
-        im_queue = queue.Queue()
         start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        self.lcd_thread.trigger_split_x(True)
+        self.lcd_thread.trigger_dpc_pattern(True)
         print(time.time()*1000-start_time)
-        self.video_thread.trigger_put_queue(im_queue)
-        print(time.time()*1000-start_time)
-        self.lcd_thread.trigger_reverse(True)
-        print(time.time()*1000-start_time)
-        self.video_thread.trigger_put_queue(im_queue)
-        print(time.time()*1000-start_time)
-        self.lcd_thread.trigger_split_y(True)
-        self.video_thread.trigger_put_queue(im_queue)
-        self.lcd_thread.trigger_reverse(True)
-        self.video_thread.trigger_put_queue(im_queue)
-        print(time.time()*1000-start_time)
-        working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
-        os.makedirs(working_dir, exist_ok=True)
+        # working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
+        # os.makedirs(working_dir, exist_ok=True)
 
-        bottom_im = im_queue.get()
-        top_im = im_queue.get()
-        right_im = im_queue.get()
-        left_im = im_queue.get()
+        # bottom_im = im_queue.get()
+        # top_im = im_queue.get()
+        # right_im = im_queue.get()
+        # left_im = im_queue.get()
 
-        cv2.imwrite(working_dir/"brightfield_tb.tiff", standardize(bottom_im*1.+top_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        cv2.imwrite(working_dir/"brightfield_lr.tiff", standardize(left_im*1.+right_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        
-        cv2.imwrite(working_dir/'01_top.tiff', top_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        cv2.imwrite(working_dir/'02_bottom.tiff', bottom_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        cv2.imwrite(working_dir/'04_left.tiff', left_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        cv2.imwrite(working_dir/'03_right.tiff', right_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        # cv2.imwrite(working_dir/"brightfield_tb.tiff", standardize(bottom_im*1.+top_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        # cv2.imwrite(working_dir/"brightfield_lr.tiff", standardize(left_im*1.+right_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+
+        # cv2.imwrite(working_dir/'01_top.tiff', top_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        # cv2.imwrite(working_dir/'02_bottom.tiff', bottom_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        # cv2.imwrite(working_dir/'04_left.tiff', left_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+        # cv2.imwrite(working_dir/'03_right.tiff', right_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
 
         # vertical_res = differential_phase_contrast(top_im, bottom_im)
         # cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
         # horizontal_res = differential_phase_contrast(right_im, left_im)
         # cv2.imwrite(working_dir/"horizontal.png", standardize(horizontal_res))
-        
+
         # res = fdspi(vertical_res, -horizontal_res)
         # cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
         # cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
+
 
 class AdjustThread(QThread):
     def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):
@@ -249,7 +293,7 @@ class AdjustThread(QThread):
     def _measure_delta_brightness(self):
         result_queue = Queue(1)
         delta_brightness = 0
-        
+
         self.video_thread.trigger_measure_brightness(result_queue)
         delta_brightness = result_queue.get()
         self.lcd_thread.trigger_reverse(True)
@@ -258,47 +302,47 @@ class AdjustThread(QThread):
         self.lcd_thread.trigger_reverse(True)
 
         return delta_brightness
-    
+
     def run(self):
         self.lcd_thread.trigger_split_x(True)
         delta_brightness = self._measure_delta_brightness()
 
         while delta_brightness > 0:
-            self.lcd_thread.trigger_update_pos(1,0)
+            self.lcd_thread.trigger_update_pos(1, 0)
             delta_brightness = self._measure_delta_brightness()
             print(f"Brightness: {delta_brightness}")
 
         while delta_brightness < 0:
-            self.lcd_thread.trigger_update_pos(-1,0)
+            self.lcd_thread.trigger_update_pos(-1, 0)
             delta_brightness = self._measure_delta_brightness()
             print(f"Brightness: {delta_brightness}")
 
-        self.lcd_thread.trigger_update_pos(1,0)
+        self.lcd_thread.trigger_update_pos(1, 0)
         delta_brightness2 = self._measure_delta_brightness()
         print(f"Brightness: {delta_brightness2}")
 
         if abs(delta_brightness2) > abs(delta_brightness):
-            self.lcd_thread.trigger_update_pos(-1,0)
+            self.lcd_thread.trigger_update_pos(-1, 0)
 
         self.lcd_thread.trigger_split_y(True)
         delta_brightness = self._measure_delta_brightness()
 
         while delta_brightness > 0:
-            self.lcd_thread.trigger_update_pos(0,1)
+            self.lcd_thread.trigger_update_pos(0, 1)
             delta_brightness = self._measure_delta_brightness()
             print(f"Brightness: {delta_brightness}")
 
         while delta_brightness < 0:
-            self.lcd_thread.trigger_update_pos(0,-1)
+            self.lcd_thread.trigger_update_pos(0, -1)
             delta_brightness = self._measure_delta_brightness()
             print(f"Brightness: {delta_brightness}")
 
-        self.lcd_thread.trigger_update_pos(0,1)
+        self.lcd_thread.trigger_update_pos(0, 1)
         delta_brightness2 = self._measure_delta_brightness()
         print(f"Brightness: {delta_brightness2}")
 
         if abs(delta_brightness2) > abs(delta_brightness):
-            self.lcd_thread.trigger_update_pos(0,-1)
+            self.lcd_thread.trigger_update_pos(0, -1)
 
 
 class App(QWidget):
@@ -308,19 +352,21 @@ class App(QWidget):
         self.label = QLabel(self)
         self.capture_btn = QPushButton("Capture")
         self.config_btn = QPushButton("Reload configuration")
-        
+
         self.split_x_btn = QPushButton("-")
         self.split_y_btn = QPushButton("|")
         self.circular_btn = QPushButton("O")
         self.reverse_btn = QPushButton("*")
-        
+
         self.label.resize(640, 480)
 
         # Create thread
-        self.video_thread = VideoThread()
-        self.video_thread.change_pixmap_signal.connect(self.update_image)
+        self.video_thread = VideoThread(batch_size=4)
+        self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue())
+        self.image_handler_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.error_signal.connect(self.close)
         self.video_thread.start()
+        self.image_handler_thread.start()
 
         self.lcd_thread = LCDControlThread()
         self.lcd_thread.start()
@@ -333,7 +379,7 @@ class App(QWidget):
         menu_layout.setSpacing(10)
         menu_layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(menu_layout)
-        
+
         menu_layout.addStretch(1)
         menu_layout.addWidget(self.capture_btn)
         menu_layout.addWidget(self.config_btn)
@@ -345,11 +391,11 @@ class App(QWidget):
         pattern_layout.addWidget(self.circular_btn)
         pattern_layout.addWidget(self.reverse_btn)
         menu_layout.addLayout(pattern_layout)
-        
+
         self.setLayout(layout)
 
-        self.capture_btn.clicked.connect(self.video_thread.trigger_save)
-        self.config_btn.clicked.connect(self.video_thread.trigger_reload)
+        # self.capture_btn.clicked.connect(self.video_thread.trigger_save)
+        # self.config_btn.clicked.connect(self.video_thread.trigger_reload)
         self.split_x_btn.clicked.connect(self.lcd_thread.trigger_split_x)
         self.split_y_btn.clicked.connect(self.lcd_thread.trigger_split_y)
         self.circular_btn.clicked.connect(self.lcd_thread.trigger_circular)
@@ -378,6 +424,18 @@ class App(QWidget):
         elif event.key() == Qt.Key_Z:
             self.thread = AdjustThread(self.video_thread, self.lcd_thread)
             self.thread.start()
+        elif event.key() == Qt.Key_1:
+            self.image_handler_thread.trigger_display_processing(1)
+        elif event.key() == Qt.Key_2:
+            self.image_handler_thread.trigger_display_processing(2)
+        elif event.key() == Qt.Key_3:
+            self.image_handler_thread.trigger_display_processing(3)
+        elif event.key() == Qt.Key_4:
+            self.image_handler_thread.trigger_display_processing(4)
+        elif event.key() == Qt.Key_5:
+            self.image_handler_thread.trigger_display_processing(5)
+        elif event.key() == Qt.Key_6:
+            self.image_handler_thread.trigger_display_processing(6)
         else:
             pass
 

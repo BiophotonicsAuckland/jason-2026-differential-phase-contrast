@@ -7,6 +7,9 @@
 #define SPI_PORT SPI
 #define SPI_SPEED 32000000    // Requests host uC to use the fastest possible SPI speed up to 32 MHz
 
+#define TRIGGER_INPUT_PIN 0
+#define TRIGGER_OUTPUT_PIN 12        // The pin configured to set the PIN
+
 #define LCD_WIDTH 128
 
 // Define how many pixels can the hardware store in the memory to speed up painting
@@ -18,8 +21,26 @@ ILI9163C_color_18_t white;
 ILI9163C_color_18_t black;
 ILI9163C_color_18_t white_color_array[1];
 
+// LCD pattern parameters
+int mode = 0;
+int targetX;
+int targetY;
+int InnerRadius;
+int OuterRadius;
+int startY;
+int endY;
+int startX;
+int endX;
+
+int painting_delay_ms = 30;
+bool triggered = false;
+
 unsigned long duration;
 unsigned int prevBox[4];
+
+void trigger() {
+  triggered = true;
+}
 
 void setup() {
   SERIAL_PORT.begin(115200);
@@ -30,6 +51,9 @@ void setup() {
   white = lcd_screen.rgbTo18b( 255, 255, 255);
   white_color_array[0] = white;
   black = lcd_screen.rgbTo18b( 0, 0, 0 );
+
+  pinMode(TRIGGER_OUTPUT_PIN, OUTPUT);
+  attachInterrupt(TRIGGER_INPUT_PIN, trigger, RISING);
 }
 
 bool isInArea(int x, int targetX) {
@@ -44,19 +68,19 @@ void loop() {
   if (SERIAL_PORT.available() > 0) {
     duration = millis();
     // Read the incoming integer using Serial.parseInt()
-    int mode = SERIAL_PORT.parseInt();
-    int targetX = SERIAL_PORT.parseInt();
-    int targetY = SERIAL_PORT.parseInt();
-    int InnerRadius = SERIAL_PORT.parseInt();
-    int OuterRadius = SERIAL_PORT.parseInt();
+    mode = SERIAL_PORT.parseInt();
+    targetX = SERIAL_PORT.parseInt();
+    targetY = SERIAL_PORT.parseInt();
+    InnerRadius = SERIAL_PORT.parseInt();
+    OuterRadius = SERIAL_PORT.parseInt();
 
     while (SERIAL_PORT.read()!=10) {
     }
 
-    int startY = max(0, abs(targetY) - OuterRadius);
-    int endY = min(lcd_screen.yExt - 1, abs(targetY) + OuterRadius);
-    int startX = max(0, abs(targetX) - OuterRadius);
-    int endX = min(LCD_WIDTH - 1, abs(targetX) + OuterRadius);
+    startY = max(0, abs(targetY) - OuterRadius);
+    endY = min(lcd_screen.yExt - 1, abs(targetY) + OuterRadius);
+    startX = max(0, abs(targetX) - OuterRadius);
+    endX = min(LCD_WIDTH - 1, abs(targetX) + OuterRadius);
 
     if (prevBox[0]<startX || prevBox[1]<startY || prevBox[2]>endX || prevBox[3]>endY) {
       lcd_screen.clearDisplay();
@@ -64,10 +88,16 @@ void loop() {
     // myTFT.yline(incomingInt, 0, 127, (color_t)white_color_array, 1, 0);
     // myTFT.rectangle(0, 0, incomingInt, 159, true, (color_t)white_color_array, 1, 0);
 
-    if ((endX-startX)*(endY-startY) <= MAX_PIXELS_IN_MEM) {
-      speedy_paint(startX, endX, startY, endY, mode, targetX, targetY, InnerRadius, OuterRadius);
+    if (mode == 4) {
+      pattern_paint(startX, endX, startY, endY, targetX, targetY, InnerRadius, OuterRadius);
     } else {
-      incremental_paint(startX, endX, startY, endY, mode, targetX, targetY, InnerRadius, OuterRadius);
+      bool canSpeedPaint = (endX-startX)*(endY-startY) <= MAX_PIXELS_IN_MEM;
+
+      if (canSpeedPaint) {
+        speedy_paint(startX, endX, startY, endY, mode, targetX, targetY, InnerRadius, OuterRadius);
+      } else {
+        incremental_paint(startX, endX, startY, endY, mode, targetX, targetY, InnerRadius, OuterRadius);
+      }
     }
 
     SERIAL_PORT.print("0| ");
@@ -83,6 +113,73 @@ void loop() {
     prevBox[2] = endX;
     prevBox[3] = endY;
   }
+  if (mode == 4) {
+    pattern_paint(startX, endX, startY, endY, targetX, targetY, InnerRadius, OuterRadius);
+  }
+}
+
+void pattern_paint(int startX, int endX, int startY, int endY, int targetX, int targetY, int InnerRadius, int OuterRadius) {
+  bool canSpeedPaint = (endX-startX)*(endY-startY) <= MAX_PIXELS_IN_MEM;
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 0, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 0, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    }
+
+    delay(painting_delay_ms);
+    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
+    while (triggered == false) {
+      delay(1);
+    }
+    triggered = false;
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 0, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 0, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    }
+
+    delay(painting_delay_ms);
+    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
+    while (triggered == false) {
+      delay(1);
+    }
+    triggered = false;
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 1, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 1, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    }
+
+    delay(painting_delay_ms);
+    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
+    while (triggered == false) {
+      delay(1);
+    }
+    triggered = false;
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 1, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 1, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+    }
+
+    delay(painting_delay_ms);
+    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
+    delayMicroseconds(1000);
+    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
+    while (triggered == false) {
+      delay(1);
+    }
+    triggered = false;
 }
 
 void incremental_paint(int startX, int endX, int startY, int endY, int mode, int targetX, int targetY, int InnerRadius, int OuterRadius) {
