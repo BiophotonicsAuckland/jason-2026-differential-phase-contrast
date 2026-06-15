@@ -4,3 +4,7 @@ camera:
   attributes:
     AcquisitionFrameRate: 45
     ExposureTime: 1000
+    OffsetX: 1096
+    OffsetY: 896
+    Width: 256
+    Height: 256

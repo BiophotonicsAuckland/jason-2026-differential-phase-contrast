@@ -16,8 +16,13 @@ class PySpinCamera():
     def configure(self):
         AppConfigManager.load_config()
         config = AppConfigManager.config.camera
-        self._set_attribute_value(self.cam.AcquisitionFrameRate, float(config.attributes['AcquisitionFrameRate']))
         self._set_attribute_value(self.cam.ExposureTime, float(config.attributes['ExposureTime']))
+        self._set_attribute_value(self.cam.Width, int(config.attributes['Width']))
+        self._set_attribute_value(self.cam.Height, int(config.attributes['Height']))
+        self._set_attribute_value(self.cam.OffsetX, int(config.attributes['OffsetX']))
+        self._set_attribute_value(self.cam.OffsetY, int(config.attributes['OffsetY']))
+        self._set_attribute_value(self.cam.AcquisitionFrameRate, float(config.attributes['AcquisitionFrameRate']))
+
 
     def open(self):
         # Retrieve list of cameras from the system
@@ -54,10 +59,10 @@ class PySpinCamera():
         self._set_attribute_value(self.cam.TLStream.StreamBufferHandlingMode, 'OldestFirst')
         self._set_attribute_value(self.cam.OffsetX, 0)
         self._set_attribute_value(self.cam.OffsetY, 0)
-        self._set_attribute_value(self.cam.Width, 2048)
-        self._set_attribute_value(self.cam.Height, 2048)
-        self._set_attribute_value(self.cam.OffsetX, 200)
-        self._set_attribute_value(self.cam.OffsetY, 0)
+        # self._set_attribute_value(self.cam.Width, 2048)
+        # self._set_attribute_value(self.cam.Height, 2048)
+        # self._set_attribute_value(self.cam.OffsetX, 200)
+        # self._set_attribute_value(self.cam.OffsetY, 0)
 
         self._set_attribute_value(self.cam.PixelFormat, 'Mono16')
         # self._set_attribute_value(self.cam.PixelFormat, 'Mono8')

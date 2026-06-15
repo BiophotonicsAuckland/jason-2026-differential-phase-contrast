@@ -46,7 +46,7 @@ class VideoThread(QThread):
             img, frame_id = self.camera.get_image_data()
             if img is not None:
                 if frame_id == self._next_frame_id:
-                    print(frame_id)
+                    # print(frame_id)
                     self._img_batch.append(img)
                     if len(self._img_batch) >= self._batch_size:
                         self.img_queue.put(self._img_batch)

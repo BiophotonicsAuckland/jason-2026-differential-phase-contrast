@@ -11,7 +11,7 @@ CONFIG_TEMPLATE_PATH = os.path.join(WORKSPACE, "config.template.yaml")
 
 class CameraConfig(BaseModel):
     image_save_dir: Path
-    attributes: dict[str, Any]
+    attributes: dict[str, int]
 
     @field_validator("image_save_dir", mode="after")
     def resolve_image_save_dir(cls, p: Path):
