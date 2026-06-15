@@ -4,6 +4,7 @@ from enum import Enum, auto
 
 
 class LCDMode(Enum):
+    NONE = auto()
     SPLIT_IN_X = auto()
     SPLIT_IN_Y = auto()
     CIRCULAR = auto()
@@ -22,6 +23,7 @@ def send_and_receive(arduino_serial, text):
 class LCDController:
     def __init__(self, port='/dev/ttyUSB0'):
         self.arduino_serial = serial.Serial(port=port, baudrate=115200, timeout=1)
+        # print(f"The board reads {self.arduino_serial.readline()}")
         self.x_center = 64
         self.y_center = 77
 
@@ -30,18 +32,20 @@ class LCDController:
         self.x_center = 0
         self.y_center = 0
 
-    def update(self, mode, inner_radius, outer_radius, reverse=False):
+    def update(self, mode, inner_radius, outer_radius, reverse, frame_count):
         match mode:
+            case LCDMode.NONE:
+                self._send(f"0,{self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}")
             case LCDMode.SPLIT_IN_X:
-                self._send(f"0,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(
-                    f"0,{-self.x_center},{self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"1,{self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}") if not reverse else self._send(
+                    f"1,{-self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}")
             case LCDMode.SPLIT_IN_Y:
-                self._send(f"1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}") if not reverse else self._send(
-                    f"1,{self.x_center},{-self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"2,{self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}") if not reverse else self._send(
+                    f"2,{self.x_center},{-self.y_center},{inner_radius},{outer_radius},{frame_count}")
             case LCDMode.CIRCULAR:
-                self._send(f"-1,{self.x_center},{self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"3,{self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}")
             case LCDMode.DPC_PATTERN:
-                self._send(f"4,{self.x_center},{self.y_center},{inner_radius},{outer_radius}")
+                self._send(f"4,{self.x_center},{self.y_center},{inner_radius},{outer_radius},{frame_count}")
             case _:
                 raise ValueError("The provided pattern mode for LCD is invalid")
 

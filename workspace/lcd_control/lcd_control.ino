@@ -34,6 +34,7 @@ int endX;
 
 int painting_delay_ms = 30;
 bool triggered = false;
+int frame_count = 0;
 
 unsigned long duration;
 unsigned int prevBox[4];
@@ -64,6 +65,30 @@ bool isInCircle(int x, int y, int centerX, int centerY, int radius) {
   return (x-centerX)*(x-centerX) + (y-centerY)*(y-centerY) < radius*radius;
 }
 
+void hardware_trigger() {
+  if (frame_count == 0) {
+    return;
+  }
+
+  delay(painting_delay_ms);
+  digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
+  delayMicroseconds(1000);
+  digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
+  unsigned long start_wait = millis();
+  while (triggered == false) {
+    if (millis() - start_wait > 1000) {
+      mode = 0;
+      break; 
+    }
+    delay(1);
+  }
+  triggered = false;
+  
+  if (frame_count > 0) {
+    frame_count -= 1;
+  }
+}
+
 void loop() {
   if (SERIAL_PORT.available() > 0) {
     duration = millis();
@@ -73,6 +98,7 @@ void loop() {
     targetY = SERIAL_PORT.parseInt();
     InnerRadius = SERIAL_PORT.parseInt();
     OuterRadius = SERIAL_PORT.parseInt();
+    frame_count = SERIAL_PORT.parseInt();
 
     while (SERIAL_PORT.read()!=10) {
     }
@@ -115,6 +141,8 @@ void loop() {
   }
   if (mode == 4) {
     pattern_paint(startX, endX, startY, endY, targetX, targetY, InnerRadius, OuterRadius);
+  } else if (mode !=0) {
+    hardware_trigger();
   }
 }
 
@@ -122,69 +150,41 @@ void pattern_paint(int startX, int endX, int startY, int endY, int targetX, int 
   bool canSpeedPaint = (endX-startX)*(endY-startY) <= MAX_PIXELS_IN_MEM;
 
     if (canSpeedPaint) {
-      speedy_paint(startX, endX, startY, endY, 0, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
-    } else {
-      incremental_paint(startX, endX, startY, endY, 0, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
-    }
-
-    delay(painting_delay_ms);
-    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
-    delayMicroseconds(1000);
-    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
-    while (triggered == false) {
-      delay(1);
-    }
-    triggered = false;
-
-    if (canSpeedPaint) {
-      speedy_paint(startX, endX, startY, endY, 0, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
-    } else {
-      incremental_paint(startX, endX, startY, endY, 0, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
-    }
-
-    delay(painting_delay_ms);
-    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
-    delayMicroseconds(1000);
-    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
-    while (triggered == false) {
-      delay(1);
-    }
-    triggered = false;
-
-    if (canSpeedPaint) {
       speedy_paint(startX, endX, startY, endY, 1, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
     } else {
       incremental_paint(startX, endX, startY, endY, 1, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
     }
 
-    delay(painting_delay_ms);
-    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
-    delayMicroseconds(1000);
-    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
-    while (triggered == false) {
-      delay(1);
-    }
-    triggered = false;
+    hardware_trigger();
 
     if (canSpeedPaint) {
-      speedy_paint(startX, endX, startY, endY, 1, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+      speedy_paint(startX, endX, startY, endY, 1, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
     } else {
-      incremental_paint(startX, endX, startY, endY, 1, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+      incremental_paint(startX, endX, startY, endY, 1, -abs(targetX), abs(targetY), InnerRadius, OuterRadius);
     }
 
-    delay(painting_delay_ms);
-    digitalWrite(TRIGGER_OUTPUT_PIN, HIGH);
-    delayMicroseconds(1000);
-    digitalWrite(TRIGGER_OUTPUT_PIN, LOW);
-    while (triggered == false) {
-      delay(1);
+    hardware_trigger();
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 2, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 2, abs(targetX), abs(targetY), InnerRadius, OuterRadius);
     }
-    triggered = false;
+
+    hardware_trigger();
+
+    if (canSpeedPaint) {
+      speedy_paint(startX, endX, startY, endY, 2, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+    } else {
+      incremental_paint(startX, endX, startY, endY, 2, abs(targetX), -abs(targetY), InnerRadius, OuterRadius);
+    }
+
+    hardware_trigger();
 }
 
 void incremental_paint(int startX, int endX, int startY, int endY, int mode, int targetX, int targetY, int InnerRadius, int OuterRadius) {
-  bool splitInX = mode==0;
-  bool splitInY = mode>0;
+  bool splitInX = mode==1;
+  bool splitInY = mode==2;
   ILI9163C_color_18_t lcd_array[endX-startX+1];
   
   for (int y=startY; y<=endY; y++) {
@@ -202,8 +202,8 @@ void incremental_paint(int startX, int endX, int startY, int endY, int mode, int
 }
 
 void speedy_paint(int startX, int endX, int startY, int endY, int mode, int targetX, int targetY, int InnerRadius, int OuterRadius) {
-  bool splitInX = mode==0;
-  bool splitInY = mode>0;
+  bool splitInX = mode==1;
+  bool splitInY = mode==2;
   ILI9163C_color_18_t lcd_array2[endX-startX+1][endY-startY+1];
 
   for (int y=startY; y<=endY; y++) {
