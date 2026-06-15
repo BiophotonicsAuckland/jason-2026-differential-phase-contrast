@@ -1,6 +1,9 @@
 import numpy as np
 import pyfftw
 
+import os
+import pickle
+
 def standardize(img):
     diff = img.max() - img.min()
     # return ((img - img.min()) * 255 // diff).astype('uint8')
@@ -59,11 +62,17 @@ class FDSPIOptimized:
     and wisdom re-computation.
     """
     
-    def __init__(self, num_threads=1, simd_aligned=True):
+    def __init__(self, num_threads=1, simd_aligned=True, cache_dir="/workspace/.cache"):
         self.num_threads = num_threads
         self.simd_aligned = simd_aligned
+        self.cache_dir = cache_dir
         
         self._cache = {}
+
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
+
+        self._load_wisdom()
     
     def _get_or_create_cache(self, shape):
         if shape in self._cache:
@@ -95,6 +104,7 @@ class FDSPIOptimized:
             flags=['FFTW_MEASURE'],
             threads=self.num_threads
         )
+        self._save_wisdom()
         
         # Pre-compute kernel
         kernel = _get_kernel(N_x, N_y)
@@ -124,6 +134,31 @@ class FDSPIOptimized:
         np.multiply(arr, cache['kernel'], out=arr)
         
         return cache['ifft_plan']().imag.copy()
+
+    def _save_wisdom(self):
+        wisdom = pyfftw.export_wisdom()
+        wisdom_path = os.path.join(self.cache_dir, "fftw_wisdom.pkl")
+        with open(wisdom_path, 'wb') as f:
+            pickle.dump(wisdom, f)
+        print(f"Cache successfully persisted to {self.cache_dir}")
+
+    def _load_wisdom(self):
+        wisdom_path = os.path.join(self.cache_dir, "fftw_wisdom.pkl")
+        if os.path.exists(wisdom_path):
+            try:
+                with open(wisdom_path, 'rb') as f:
+                    wisdom = pickle.load(f)
+                pyfftw.import_wisdom(wisdom)
+                print("FFTW Wisdom successfully loaded from disk.")
+            except Exception as e:
+                print(f"Failed to load wisdom: {e}. Proceeding without it.")
+
+    def _load_kernel_from_disk(self, shape):
+        """Helper to fetch a specific kernel size from disk."""
+        kernel_path = os.path.join(self.cache_dir, f"kernel_{shape[0]}x{shape[1]}.npy")
+        if os.path.exists(kernel_path):
+            return np.load(kernel_path)
+        return None
     
     def clear_cache(self):
         """Clear cached plans and arrays."""
@@ -132,22 +167,26 @@ class FDSPIOptimized:
 if __name__ == "__main__":
     import cv2
     from pathlib import Path
-    im_dir = Path("images")/"20260506_005953_180560"
-    top_im = cv2.imread(im_dir/'01_top.png', cv2.IMREAD_UNCHANGED)
-    bottom_im = cv2.imread(im_dir/'02_bottom.png', cv2.IMREAD_UNCHANGED)
+    im_size = 256
+    ext = 'png'
+
+
+    im_dir = Path("images")/"20260506_005405_165253"
+    top_im = cv2.imread(im_dir/f'01_top.{ext}', cv2.IMREAD_UNCHANGED)
+    bottom_im = cv2.imread(im_dir/f'02_bottom.{ext}', cv2.IMREAD_UNCHANGED)
     vertical_res = differential_phase_contrast(top_im, bottom_im)
     # cv2.imwrite(im_dir/"vertical.png", standardize(vertical_res))
-    left_im = cv2.imread(im_dir/'04_left.png', cv2.IMREAD_UNCHANGED)
-    right_im = cv2.imread(im_dir/'03_right.png', cv2.IMREAD_UNCHANGED)
+    left_im = cv2.imread(im_dir/f'04_left.{ext}', cv2.IMREAD_UNCHANGED)
+    right_im = cv2.imread(im_dir/f'03_right.{ext}', cv2.IMREAD_UNCHANGED)
     horizontal_res = differential_phase_contrast(right_im, left_im)
     # cv2.imwrite(im_dir/"horizontal.png", standardize(horizontal_res))
     ffdspi = FDSPIOptimized()
     # res = ffdspi(np.zeros_like(vertical_res), np.zeros_like(-horizontal_res))
-    res = ffdspi(np.zeros_like(vertical_res[:2048,:2048]), np.zeros_like(-horizontal_res[:2048,:2048]))
+    res = ffdspi(np.zeros_like(vertical_res[:im_size,:im_size]), np.zeros_like(-horizontal_res[:im_size,:im_size]))
     import time
     start_time = time.time() * 1000
     # res = fdspi(vertical_res, -horizontal_res)
-    res = ffdspi(vertical_res[:2048,:2048], -horizontal_res[:2048,:2048])
+    res = ffdspi(vertical_res[:im_size,:im_size], -horizontal_res[:im_size,:im_size])
     print(time.time()*1000-start_time)
     # np.save(im_dir/"phase.npy", res)
     res = standardize(res)

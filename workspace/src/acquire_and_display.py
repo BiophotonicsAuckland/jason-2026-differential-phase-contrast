@@ -17,7 +17,7 @@ from datetime import datetime
 from camera import PySpinCamera
 from core.config import AppConfigManager
 from adapters.lcd_control import LCDMode, LCDController
-from optics import differential_phase_contrast, fdspi, standardize
+from optics import FDSPIOptimized, differential_phase_contrast, fdspi, standardize
 
 
 class VideoThread(QThread):
@@ -105,6 +105,7 @@ class ImageHandlerThread(QThread):
         self._run_flag = True
         self.image_queue = image_queue
         self.process_fun = lambda imgs: imgs[0]
+        self.processors = {}
 
     def run(self):
         while self._run_flag:
@@ -129,6 +130,11 @@ class ImageHandlerThread(QThread):
             self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]))
         elif mode == 6:
             self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[2], imgs[3]))
+        elif mode == 7:
+            if "FDSPI" not in self.processors:
+                self.processors = {"FDSPI": FDSPIOptimized()}
+            self.process_fun = lambda imgs: standardize(self.processors["FDSPI"](differential_phase_contrast(
+                imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3])))
 
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
@@ -438,6 +444,8 @@ class App(QWidget):
             self.image_handler_thread.trigger_display_processing(5)
         elif event.key() == Qt.Key_6:
             self.image_handler_thread.trigger_display_processing(6)
+        elif event.key() == Qt.Key_7:
+            self.image_handler_thread.trigger_display_processing(7)
         else:
             pass
 
