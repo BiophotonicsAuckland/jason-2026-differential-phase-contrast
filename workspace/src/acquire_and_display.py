@@ -32,9 +32,12 @@ class VideoThread(QThread):
         self._batch_size = batch_size
         self._exit_ready_flag = threading.Event()
         self.img_queue = Queue()
-        self._img_batch = []
+        self._img_batch = [None, None, None, None, 0]
         self._next_frame_id = 0
         self._batch_start_frame_id = 0
+
+    def _get_img_index_in_batch(self, frame_id):
+        return (frame_id % self._batch_size - self._batch_start_frame_id % self._batch_size) % self._batch_size
 
     def run(self):
         if self.camera.cam is None:
@@ -45,20 +48,29 @@ class VideoThread(QThread):
         while self._run_flag:
             img, frame_id = self.camera.get_image_data()
             if img is not None:
+                # if frame_id == self._next_frame_id:
+                #     # print(frame_id)
+                #     self._img_batch.append(img)
+                #     if len(self._img_batch) >= self._batch_size:
+                #         self.img_queue.put(self._img_batch)
+                #         self._img_batch = []
+                #     self._next_frame_id += 1
+                # elif frame_id > self._next_frame_id:
+                #     self._img_batch = []
+                #     self._next_frame_id = frame_id+(self._batch_start_frame_id %
+                #                                     self._batch_size-frame_id % self._batch_size) % self._batch_size
+                #     if self._next_frame_id == frame_id:
+                #         self._img_batch.append(img)
+                #         self._next_frame_id += 1
                 if frame_id == self._next_frame_id:
-                    # print(frame_id)
-                    self._img_batch.append(img)
-                    if len(self._img_batch) >= self._batch_size:
-                        self.img_queue.put(self._img_batch)
-                        self._img_batch = []
+                    self._img_batch[self._get_img_index_in_batch(frame_id)]=img
+                    self._img_batch[4] += 1
                     self._next_frame_id += 1
-                elif frame_id > self._next_frame_id:
-                    self._img_batch = []
-                    self._next_frame_id = frame_id+(self._batch_start_frame_id %
-                                                    self._batch_size-frame_id % self._batch_size) % self._batch_size
-                    if self._next_frame_id == frame_id:
-                        self._img_batch.append(img)
-                        self._next_frame_id += 1
+                    if self._img_batch[4] >= 4:
+                        self.img_queue.put(self._img_batch[:-1])
+                else:
+                    self._img_batch = [None, None, None, None, 0]
+                    self._next_frame_id = frame_id + 1
         self._exit_ready_flag.set()
 
     def set_image_batch_size(self, batch_size):

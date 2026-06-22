@@ -92,7 +92,7 @@ class FDSPIOptimized:
             arr,
             axes=(0, 1),
             direction='FFTW_FORWARD',
-            flags=['FFTW_MEASURE'],
+            flags=['FFTW_EXHAUSTIVE'],
             threads=self.num_threads
         )
         
@@ -101,7 +101,7 @@ class FDSPIOptimized:
             arr,
             axes=(0, 1),
             direction='FFTW_BACKWARD',
-            flags=['FFTW_MEASURE'],
+            flags=['FFTW_EXHAUSTIVE'],
             threads=self.num_threads
         )
         self._save_wisdom()
@@ -167,7 +167,7 @@ class FDSPIOptimized:
 if __name__ == "__main__":
     import cv2
     from pathlib import Path
-    im_size = 256
+    im_size = 512
     ext = 'png'
 
 
