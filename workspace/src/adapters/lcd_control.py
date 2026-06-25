@@ -1,4 +1,5 @@
 import serial
+from serial.tools import list_ports
 import time
 from enum import Enum, auto
 
@@ -21,12 +22,25 @@ def send_and_receive(arduino_serial, text):
 
 
 class LCDController:
-    def __init__(self, port='/dev/ttyUSB0'):
+    def __init__(self, port=None):
+        if not port:
+            port = LCDController._get_uc_port()
+            if not port:
+                raise ConnectionError("Cannot find LCD port")
+
         self.arduino_serial = serial.Serial(port=port, baudrate=115200, timeout=1)
         # print(f"The board reads {self.arduino_serial.readline()}")
         self.x_center = 64
         self.y_center = 77
 
+    def _get_uc_port():
+        ports = list(list_ports.comports())
+        for port in ports:
+            if port.interface and 'CP2102' in port.interface:
+                return port.device
+        
+        return None
+        
     # TODO
     def configure(self):
         self.x_center = 0
