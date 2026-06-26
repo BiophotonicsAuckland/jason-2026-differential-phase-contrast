@@ -7,7 +7,7 @@
 #define SPI_PORT SPI
 #define SPI_SPEED 32000000    // Requests host uC to use the fastest possible SPI speed up to 32 MHz
 
-#define TRIGGER_INPUT_PIN 0
+#define TRIGGER_INPUT_PIN 22
 #define TRIGGER_OUTPUT_PIN 12        // The pin configured to set the PIN
 
 #define LCD_WIDTH 128
@@ -32,7 +32,7 @@ int endY;
 int startX;
 int endX;
 
-int painting_delay_ms = 30;
+int painting_delay_ms = 25;
 bool triggered = false;
 int frame_count = 0;
 
@@ -47,6 +47,8 @@ void setup() {
   SERIAL_PORT.begin(115200);
 
   lcd_screen.begin(DC_PIN, CS_PIN, PWM_PIN, SPI_PORT, SPI_SPEED);  // This is a non-hyperdisplay function, but it is required to make the display work
+  // lcd_screen.setNormalFramerate(0x04, 0x00);
+  // lcd_screen.setIdleFramerate(0x10, 0x10);
   lcd_screen.clearDisplay();                                       // clearDisplay is also not part of hyperdisplay, but we will use it here for simplicity
 
   white = lcd_screen.rgbTo18b( 255, 255, 255);
@@ -54,6 +56,7 @@ void setup() {
   black = lcd_screen.rgbTo18b( 0, 0, 0 );
 
   pinMode(TRIGGER_OUTPUT_PIN, OUTPUT);
+  pinMode(TRIGGER_INPUT_PIN, INPUT_PULLUP);
   attachInterrupt(TRIGGER_INPUT_PIN, trigger, RISING);
 }
 
