@@ -1,6 +1,7 @@
 from queue import Queue
 import queue
 import time
+import random
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
@@ -8,6 +9,8 @@ from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPus
 import numpy as np
 import cv2
 from pathlib import Path
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
 import os
 import sys
@@ -112,13 +115,15 @@ class VideoThread(QThread):
 class ImageHandlerThread(QThread):
     change_pixmap_signal = pyqtSignal(QImage)
 
-    def __init__(self, image_queue: Queue[np.ndarray]):
+    def __init__(self, image_queue: Queue[np.ndarray], hist_canvas):
         super().__init__()
         self._run_flag = True
         self._input_image_queue = image_queue
         self.output_image_queue = queue.Queue(1)
         self.process_fun = lambda imgs: imgs[0]
         self.processors = {}
+
+        self.hist_canvas = hist_canvas
 
     def run(self):
         while self._run_flag:
@@ -128,6 +133,9 @@ class ImageHandlerThread(QThread):
                 continue
 
             img = self.process_fun(imgs)
+            
+            if random.random() > 0.9:
+                self.hist_canvas.plot_histogram(img)
 
             if self.output_image_queue.empty():
                 self.output_image_queue.put(img)
@@ -270,7 +278,7 @@ class CaptureThread(QThread):
         self.lcd_thread = lcd_thread
 
     def run(self):
-        start_time = time.time()*1000
+        # start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         # working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
         working_dir = AppConfigManager.config.camera.image_save_dir
@@ -280,6 +288,7 @@ class CaptureThread(QThread):
             ## clear stale image
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
+            print(img.shape)
             cv2.imwrite(working_dir/f"{timestamp}.tiff", img, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
             print(f'Image saved: {working_dir/f"{timestamp}.tiff"}')
         except queue.Empty:
@@ -373,6 +382,26 @@ class AdjustThread(QThread):
         if abs(delta_brightness2) > abs(delta_brightness):
             self.lcd_thread.trigger_update_pos(0, -1)
 
+class HistogramCanvas(FigureCanvas):
+    """A matplotlib canvas integrated into the PyQt ecosystem."""
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.fig, self.ax = plt.subplots(figsize=(width, height), dpi=dpi)
+        self.ax.margins(0, 0)
+        super().__init__(self.fig)
+        self.setParent(parent)
+        
+    def plot_histogram(self, cv_image):
+        """Calculates and plots the RGB histogram."""
+        self.ax.clear() # Clear previous plot
+        
+        hist = cv2.calcHist([cv_image], [0], None, [256], [0, 65536])
+        # self.ax.plot(hist, color='b', linewidth=1.5)
+        self.ax.plot(hist, color='b')
+        self.ax.set_title("Image Histogram")
+        self.ax.set_xlim([0, 256])
+        self.ax.set_axis_off()
+        
+        self.draw() # Refresh the canvas
 
 class App(QWidget):
     def __init__(self):
@@ -382,11 +411,12 @@ class App(QWidget):
         self.capture_btn = QPushButton("Capture")
         self.config_btn = QPushButton("Reload configuration")
 
+        self.hist_canvas = HistogramCanvas(self, width=10, height=40, dpi=100)
         self.label.resize(640, 480)
 
         # Create thread
         self.video_thread = VideoThread(batch_size=4)
-        self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue())
+        self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue(), self.hist_canvas)
         self.image_handler_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.error_signal.connect(self.close)
         self.video_thread.start()
@@ -398,13 +428,17 @@ class App(QWidget):
         self.thread = None
 
         layout = QHBoxLayout()
-        menu_layout = QVBoxLayout()
+
+        container = QWidget()
+        container.setMinimumSize(200, 300)
+        menu_layout = QVBoxLayout(container)
         layout.addWidget(self.label)
         menu_layout.setSpacing(10)
         menu_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(menu_layout)
+        layout.addWidget(container)
 
         menu_layout.addStretch(1)
+        menu_layout.addWidget(self.hist_canvas, stretch=4)
         menu_layout.addWidget(self.capture_btn)
         menu_layout.addWidget(self.config_btn)
         menu_layout.addStretch(1)
