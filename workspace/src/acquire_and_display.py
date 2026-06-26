@@ -63,7 +63,7 @@ class VideoThread(QThread):
                 #         self._img_batch.append(img)
                 #         self._next_frame_id += 1
                 if frame_id == self._next_frame_id:
-                    self._img_batch[self._get_img_index_in_batch(frame_id)]=img
+                    self._img_batch[self._get_img_index_in_batch(frame_id)] = img
                     self._img_batch[4] += 1
                     self._next_frame_id += 1
                     if self._img_batch[4] >= 4:
@@ -115,18 +115,23 @@ class ImageHandlerThread(QThread):
     def __init__(self, image_queue: Queue[np.ndarray]):
         super().__init__()
         self._run_flag = True
-        self.image_queue = image_queue
+        self._input_image_queue = image_queue
+        self.output_image_queue = queue.Queue(1)
         self.process_fun = lambda imgs: imgs[0]
         self.processors = {}
 
     def run(self):
         while self._run_flag:
             try:
-                imgs = self.image_queue.get(timeout=1)
+                imgs = self._input_image_queue.get(timeout=1)
             except queue.Empty:
                 continue
 
             img = self.process_fun(imgs)
+
+            if self.output_image_queue.empty():
+                self.output_image_queue.put(img)
+
             h, w = img.shape
             bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
             convert_to_Qt_format = QImage(
@@ -259,18 +264,26 @@ class LCDControlThread(QThread):
 
 
 class CaptureThread(QThread):
-    def __init__(self, video_thread: VideoThread, lcd_thread: LCDControlThread):
+    def __init__(self, image_handler_thread: ImageHandlerThread, lcd_thread: LCDControlThread):
         super().__init__()
-        self.video_thread = video_thread
+        self.image_handler_thread = image_handler_thread
         self.lcd_thread = lcd_thread
 
     def run(self):
         start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        self.lcd_thread.trigger_dpc_pattern(True)
-        print(time.time()*1000-start_time)
         # working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
-        # os.makedirs(working_dir, exist_ok=True)
+        working_dir = AppConfigManager.config.camera.image_save_dir
+        os.makedirs(working_dir, exist_ok=True)
+
+        try:
+            ## clear stale image
+            img = self.image_handler_thread.output_image_queue.get(timeout=1)
+            img = self.image_handler_thread.output_image_queue.get(timeout=1)
+            cv2.imwrite(working_dir/f"{timestamp}.tiff", img, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
+            print(f'Image saved: {working_dir/f"{timestamp}.tiff"}')
+        except queue.Empty:
+            pass
 
         # bottom_im = im_queue.get()
         # top_im = im_queue.get()
@@ -439,8 +452,9 @@ class App(QWidget):
                 time.sleep(0.01)
             self.video_thread.set_image_batch_size(4)
             self.lcd_thread.trigger_dpc_pattern(True)
-            # self.thread = CaptureThread(self.video_thread, self.lcd_thread)
-            # self.thread.start()
+        elif event.key() == Qt.Key_P:
+            self.thread = CaptureThread(self.image_handler_thread, self.lcd_thread)
+            self.thread.start()
         elif event.key() == Qt.Key_Z:
             self.thread = AdjustThread(self.video_thread, self.image_handler_thread, self.lcd_thread)
             self.thread.start()
