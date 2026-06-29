@@ -119,8 +119,6 @@ class PySpinCamera():
             else:
                 image_converted = self._img_processor.Convert(image_result, PySpin.PixelFormat_Mono16)
                 image_data = image_converted.GetNDArray()
-                image_converted.Release()
-
             image_result.Release()
             return image_data, frame_id
         except PySpin.SpinnakerException:
