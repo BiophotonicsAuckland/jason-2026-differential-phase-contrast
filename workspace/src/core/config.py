@@ -5,7 +5,8 @@ import os
 from typing import Any
 from pathlib import Path
 
-WORKSPACE = "/workspace"
+# WORKSPACE = "C:\Users\jche774\Majar\Projects\jason-2026-differential-phase-contrast\workspace"
+WORKSPACE = r"C:\Users\jche774\Majar\Projects\jason-2026-differential-phase-contrast\workspace"
 CONFIG_PATH = os.path.join(WORKSPACE, "config.yaml")
 CONFIG_TEMPLATE_PATH = os.path.join(WORKSPACE, "config.template.yaml")
 
