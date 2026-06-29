@@ -218,3 +218,4 @@ __marimo__/
 # Project related
 /workspace/images
 /workspace/.cache
+/workspace/config.yaml
