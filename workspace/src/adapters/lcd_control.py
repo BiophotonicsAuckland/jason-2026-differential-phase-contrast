@@ -36,7 +36,10 @@ class LCDController:
     def _get_uc_port():
         ports = list(list_ports.comports())
         for port in ports:
-            if port.interface and 'CP2102' in port.interface:
+            ## Windows 
+            # Description: Silicon Labs CP210x USB to UART Bridge (COM3)
+            # Hardware ID: USB VID:PID=10C4:EA60 SER=0001 LOCATION=1-4
+            if (port.interface and 'CP2102' in port.interface) or (port.description and 'UART' in port.description):
                 return port.device
         
         return None
@@ -86,7 +89,7 @@ if __name__ == "__main__":
     lcd_controller = LCDController()
     import time
     time.sleep(2)
-    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, True)
+    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, True, 0)
     # time.sleep(0.1)
-    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, False)
+    lcd_controller.update(LCDMode.SPLIT_IN_X, 0, 50, False, 0)
     lcd_controller.close()
