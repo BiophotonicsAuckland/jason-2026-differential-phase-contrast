@@ -11,10 +11,12 @@
 #define TRIGGER_OUTPUT_PIN 12        // The pin configured to set the PIN
 
 #define LCD_WIDTH 128
+#define LCD_HEIGHT 160
 
 // Define how many pixels can the hardware store in the memory to speed up painting
 // Setting too higher could cause OOM which crashes the device
 #define MAX_PIXELS_IN_MEM 500
+#define PATTERN_MARGIN 5  // margin of the pattern when on partial mode
 
 KWH018ST01_4WSPI lcd_screen;
 ILI9163C_color_18_t white;
@@ -32,7 +34,7 @@ int endY;
 int startX;
 int endX;
 
-int painting_delay_ms = 25;
+int painting_delay_ms = 33;
 bool triggered = false;
 int frame_count = 0;
 
@@ -43,13 +45,19 @@ void trigger() {
   triggered = true;
 }
 
+void set_partial_mode(int start, int end) {
+  lcd_screen.clearDisplay();
+  lcd_screen.partialModeOn();
+  lcd_screen.setPartialFramerate(0x8, 0x20);
+  lcd_screen.setPartialArea(LCD_HEIGHT-end, LCD_HEIGHT-start);  // somehow the area line indexing of this function is reversed
+}
+
 void setup() {
   SERIAL_PORT.begin(115200);
 
   lcd_screen.begin(DC_PIN, CS_PIN, PWM_PIN, SPI_PORT, SPI_SPEED);  // This is a non-hyperdisplay function, but it is required to make the display work
   // lcd_screen.setNormalFramerate(0x04, 0x00);
   // lcd_screen.setIdleFramerate(0x10, 0x10);
-  lcd_screen.clearDisplay();                                       // clearDisplay is also not part of hyperdisplay, but we will use it here for simplicity
 
   white = lcd_screen.rgbTo18b( 255, 255, 255);
   white_color_array[0] = white;
@@ -112,7 +120,7 @@ void loop() {
     endX = min(LCD_WIDTH - 1, abs(targetX) + OuterRadius);
 
     if (prevBox[0]<startX || prevBox[1]<startY || prevBox[2]>endX || prevBox[3]>endY) {
-      lcd_screen.clearDisplay();
+      set_partial_mode(max(0, startY-PATTERN_MARGIN), min(LCD_HEIGHT, endY+PATTERN_MARGIN));
     }
     // myTFT.yline(incomingInt, 0, 127, (color_t)white_color_array, 1, 0);
     // myTFT.rectangle(0, 0, incomingInt, 159, true, (color_t)white_color_array, 1, 0);
