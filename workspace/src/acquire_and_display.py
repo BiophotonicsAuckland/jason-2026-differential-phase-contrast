@@ -139,13 +139,13 @@ class ImageHandlerThread(QThread):
 
             if self.output_image_queue.empty():
                 self.output_image_queue.put(img)
-
+            
             h, w = img.shape
             bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
             convert_to_Qt_format = QImage(
                 img.data, w, h, bytes_per_line,
                 QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
-            p = convert_to_Qt_format.scaled(1000, 680, Qt.KeepAspectRatio, )
+            p = convert_to_Qt_format.scaled(612, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.change_pixmap_signal.emit(p)
 
     def trigger_display_processing(self, mode: int):
