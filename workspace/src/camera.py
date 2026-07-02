@@ -64,8 +64,8 @@ class PySpinCamera():
         # self._set_attribute_value(self.cam.OffsetX, 200)
         # self._set_attribute_value(self.cam.OffsetY, 0)
 
-        self._set_attribute_value(self.cam.PixelFormat, 'Mono16')
-        # self._set_attribute_value(self.cam.PixelFormat, 'Mono8')
+        # self._set_attribute_value(self.cam.PixelFormat, 'Mono16')
+        self._set_attribute_value(self.cam.PixelFormat, 'Mono8')
         self._set_attribute_value(self.cam.AcquisitionFrameRateEnable, True)
         self.configure()
         # self._set_attribute_value(self.cam.TLStream.StreamBufferCountManual, 3)

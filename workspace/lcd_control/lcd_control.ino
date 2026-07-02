@@ -48,7 +48,7 @@ void trigger() {
 void set_partial_mode(int start, int end) {
   lcd_screen.clearDisplay();
   lcd_screen.partialModeOn();
-  lcd_screen.setPartialFramerate(0x8, 0x20);
+  lcd_screen.setPartialFramerate(0x6, 0x20);
   lcd_screen.setPartialArea(LCD_HEIGHT-end, LCD_HEIGHT-start);  // somehow the area line indexing of this function is reversed
 }
 

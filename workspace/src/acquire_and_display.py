@@ -131,7 +131,7 @@ class ImageHandlerThread(QThread):
                 imgs = self._input_image_queue.get(timeout=1)
             except queue.Empty:
                 continue
-
+            
             img = self.process_fun(imgs)
             
             if random.random() > 0.9:
@@ -150,16 +150,16 @@ class ImageHandlerThread(QThread):
 
     def trigger_display_processing(self, mode: int):
         if mode <= 4:
-            self.process_fun = lambda imgs: imgs[mode-1]
+            self.process_fun = lambda imgs: imgs[min(mode, len(imgs))-1]
         elif mode == 5:
-            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]))
+            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]), imgs[0].dtype)
         elif mode == 6:
-            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[2], imgs[3]))
+            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[2], imgs[3]), imgs[0].dtype)
         elif mode == 7:
             if "FDSPI" not in self.processors:
                 self.processors = {"FDSPI": FDSPIOptimized()}
             self.process_fun = lambda imgs: standardize(self.processors["FDSPI"](differential_phase_contrast(
-                imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3])))
+                imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3])), imgs[0].dtype)
 
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
@@ -394,7 +394,7 @@ class HistogramCanvas(FigureCanvas):
         """Calculates and plots the RGB histogram."""
         self.ax.clear() # Clear previous plot
         
-        hist = cv2.calcHist([cv_image], [0], None, [256], [0, 65536])
+        hist = cv2.calcHist([cv_image], [0], None, [256], [0, 256 if cv_image.dtype==np.uint8 else 65536])
         # self.ax.plot(hist, color='b', linewidth=1.5)
         self.ax.plot(hist, color='b')
         self.ax.set_title("Image Histogram")

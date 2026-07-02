@@ -4,13 +4,43 @@ import pyfftw
 import os
 import pickle
 
-def standardize(img):
+cache = {}
+
+def standardize(img: np.ndarray, dtype=np.uint8):
     diff = img.max() - img.min()
-    # return ((img - img.min()) * 255 // diff).astype('uint8')
-    return ((img - img.min()) * 65535 // diff).astype('uint16')
+    if diff == 0:
+        return np.zeros(img.shape, dtype=dtype)
+
+    res = img - img.min()
+    res *= 255 if dtype==np.uint8 else 65535
+    res //= diff
+    return res.astype(dtype)
 
 
 def differential_phase_contrast(illumination1, illumination2):
+    shape = illumination1.shape
+    in_dtype = illumination1.dtype
+    cache_key = (shape, in_dtype)
+    
+    if cache_key not in cache:
+        dtypes = (np.uint16, np.int16) if in_dtype == np.uint8 else (np.uint32, np.int32)
+        cache[cache_key] = {
+            'sum': np.empty(shape, dtype=dtypes[0]),
+            'diff': np.empty(shape, dtype=dtypes[1]),
+            'res': np.empty(shape, dtype=np.float32)
+        }
+        
+    buffers = cache[cache_key]
+    sum_buf = buffers['sum']
+    diff_buf = buffers['diff']
+    res_buf = buffers['res']
+    
+    np.subtract(illumination1, illumination2, dtype=diff_buf.dtype, out=diff_buf)
+    np.add(illumination1, illumination2, dtype=sum_buf.dtype, out=sum_buf)
+    np.maximum(sum_buf, 1, out=sum_buf)
+    np.divide(diff_buf, sum_buf, out=res_buf)
+    return res_buf.copy()
+
     illumination1 = illumination1.astype(np.int32)
     res = (illumination1 - illumination2) / (illumination1 + illumination2)
     res[res==np.nan]=0
