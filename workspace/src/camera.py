@@ -15,13 +15,14 @@ class PySpinCamera():
 
     def configure(self):
         AppConfigManager.load_config()
-        config = AppConfigManager.config.camera
-        self._set_attribute_value(self.cam.ExposureTime, float(config.attributes['ExposureTime']))
-        self._set_attribute_value(self.cam.Width, int(config.attributes['Width']))
-        self._set_attribute_value(self.cam.Height, int(config.attributes['Height']))
-        self._set_attribute_value(self.cam.OffsetX, int(config.attributes['OffsetX']))
-        self._set_attribute_value(self.cam.OffsetY, int(config.attributes['OffsetY']))
-        self._set_attribute_value(self.cam.AcquisitionFrameRate, float(config.attributes['AcquisitionFrameRate']))
+        config = AppConfigManager.config.image_acquisition.camera
+        self._set_attribute_value(self.cam.PixelFormat, config.pixel_format)
+        self._set_attribute_value(self.cam.ExposureTime, config.exposure_time)
+        self._set_attribute_value(self.cam.Width, config.width)
+        self._set_attribute_value(self.cam.Height, config.height)
+        self._set_attribute_value(self.cam.OffsetX, config.offset_x)
+        self._set_attribute_value(self.cam.OffsetY, config.offset_y)
+        self._set_attribute_value(self.cam.AcquisitionFrameRate, config.acquisition_frame_rate)
 
 
     def open(self):

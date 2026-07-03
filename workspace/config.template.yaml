@@ -1,10 +1,11 @@
 version: 0.0.1
-camera:
+image_acquisition:
   image_save_dir: 'images'
-  attributes:
-    AcquisitionFrameRate: 45
-    ExposureTime: 1000
+  camera:
+    AcquisitionFrameRate: 30
+    ExposureTime: 200
     OffsetX: 968
     OffsetY: 768
-    Width: 256
-    Height: 256
+    Width: 512
+    Height: 512
+    PixelFormat: 'Mono8'

@@ -106,7 +106,7 @@ class VideoThread(QThread):
         if image_dir is None:
             image_dir = '.'
 
-        image_path = Path(AppConfigManager.config.camera.image_save_dir)/image_dir
+        image_path = Path(AppConfigManager.config.image_acquisition.image_save_dir)/image_dir
         os.makedirs(image_path, exist_ok=True)
         cv2.imwrite(image_path/f"{image_name}.png", image)
         cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
@@ -281,7 +281,7 @@ class CaptureThread(QThread):
         # start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         # working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
-        working_dir = AppConfigManager.config.camera.image_save_dir
+        working_dir = AppConfigManager.config.image_acquisition.image_save_dir
         os.makedirs(working_dir, exist_ok=True)
 
         try:
