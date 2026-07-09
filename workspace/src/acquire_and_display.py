@@ -164,7 +164,8 @@ class ImageHandlerThread(QThread):
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
         def measure_brightness_process_fun(ims):
-            result_queue.put((ims[0]/65335).sum())
+            scaling = 1/255 if ims[0].dtype==np.uint8 else 1/65535
+            result_queue.put((ims[0]*scaling).sum())
             return ims[0]
 
         time.sleep(0.4)
@@ -182,8 +183,9 @@ class LCDControlThread(QThread):
         self._exit_ready_flag = threading.Event()
         self._update_queue = Queue()
         self._frame_count = -1
+        self.outer_radius = 50
         self.update_callback = lambda: self._lcd_controller.update(
-            self._lcd_mode, 0, 20, self._reverse, self._frame_count)
+            self._lcd_mode, 0, self.outer_radius, self._reverse, self._frame_count)
 
     @pyqtSlot()
     def trigger(self, function, blocking=False):
@@ -336,6 +338,13 @@ class AdjustThread(QThread):
         delta_brightness -= result_queue.get()
 
         return delta_brightness
+    
+    def _measure_brightness(self):
+        result_queue = Queue(1)
+
+        self.img_handler_thread.trigger_measure_brightness(result_queue)
+        self.lcd_thread.trigger_circular(1, True)
+        return result_queue.get()
 
     def run(self):
         self.lcd_thread.trigger_split_x(0, True)
@@ -382,6 +391,31 @@ class AdjustThread(QThread):
         if abs(delta_brightness2) > abs(delta_brightness):
             self.lcd_thread.trigger_update_pos(0, -1)
 
+        ## Radius auto adjustment
+        self.lcd_thread.outer_radius = 5
+        prev_brightness = float('-inf')
+        brightness = 0
+        while brightness > prev_brightness:
+            prev_brightness = brightness
+            self.lcd_thread.outer_radius += 2
+            print(f"New radius: {self.lcd_thread.outer_radius}")
+            brightness = self._measure_brightness()
+            print(f"Brightness: {brightness}")
+
+        prev_brightness = brightness
+        while brightness >= prev_brightness:
+            prev_brightness = brightness
+            self.lcd_thread.outer_radius -= 1
+            print(f"New radius: {self.lcd_thread.outer_radius}")
+            brightness = self._measure_brightness()
+            print(f"Brightness: {brightness}")
+        
+        self.lcd_thread.outer_radius += 1
+        print(f"New radius: {self.lcd_thread.outer_radius}")
+        brightness = self._measure_brightness()
+        print(f"Brightness: {brightness}")
+        
+
 class HistogramCanvas(FigureCanvas):
     """A matplotlib canvas integrated into the PyQt ecosystem."""
     def __init__(self, parent=None, width=5, height=4, dpi=100):
@@ -412,7 +446,7 @@ class App(QWidget):
         self.config_btn = QPushButton("Reload configuration")
 
         self.hist_canvas = HistogramCanvas(self, width=10, height=40, dpi=100)
-        self.label.resize(640, 480)
+        self.label.setScaledContents(True)
 
         # Create thread
         self.video_thread = VideoThread(batch_size=4)

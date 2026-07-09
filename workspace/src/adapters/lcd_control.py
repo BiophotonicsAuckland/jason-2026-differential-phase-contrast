@@ -78,7 +78,7 @@ class LCDController:
         while not line.startswith('0'):
             line = self.arduino_serial.readline().decode('utf-8').rstrip()
             time.sleep(0.1)
-            print(line)
+            # print(line)
         # time.sleep(0.01) #TODO there seems to be some painting delay
 
     def close(self):
