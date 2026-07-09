@@ -119,7 +119,10 @@ void loop() {
     startX = max(0, abs(targetX) - OuterRadius);
     endX = min(LCD_WIDTH - 1, abs(targetX) + OuterRadius);
 
-    if (prevBox[0]<startX || prevBox[1]<startY || prevBox[2]>endX || prevBox[3]>endY) {
+    // if (prevBox[0]<startX || prevBox[1]<startY || prevBox[2]>endX || prevBox[3]>endY) {
+    //   set_partial_mode(max(0, startY-PATTERN_MARGIN), min(LCD_HEIGHT, endY+PATTERN_MARGIN));
+    // }
+    if (prevBox[0]!=startX || prevBox[1]!=startY || prevBox[2]!=endX || prevBox[3]!=endY) {
       set_partial_mode(max(0, startY-PATTERN_MARGIN), min(LCD_HEIGHT, endY+PATTERN_MARGIN));
     }
     // myTFT.yline(incomingInt, 0, 127, (color_t)white_color_array, 1, 0);
