@@ -1,26 +1,23 @@
 from queue import Queue
 import queue
 import time
-import random
+from pathlib import Path
+import os
+import sys
+import threading
+from datetime import datetime
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPushButton, QWidget
 import numpy as np
 import cv2
-from pathlib import Path
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-
-import os
-import sys
-import threading
-from datetime import datetime
+import pyqtgraph as pg
 
 from camera import PySpinCamera
 from core.config import AppConfigManager
 from adapters.lcd_control import LCDMode, LCDController
-from optics import FDSPIOptimized, differential_phase_contrast, fdspi, standardize
+from optics import FDSPIOptimized, differential_phase_contrast, standardize
 
 
 class VideoThread(QThread):
@@ -51,20 +48,6 @@ class VideoThread(QThread):
         while self._run_flag:
             img, frame_id = self.camera.get_image_data()
             if img is not None:
-                # if frame_id == self._next_frame_id:
-                #     # print(frame_id)
-                #     self._img_batch.append(img)
-                #     if len(self._img_batch) >= self._batch_size:
-                #         self.img_queue.put(self._img_batch)
-                #         self._img_batch = []
-                #     self._next_frame_id += 1
-                # elif frame_id > self._next_frame_id:
-                #     self._img_batch = []
-                #     self._next_frame_id = frame_id+(self._batch_start_frame_id %
-                #                                     self._batch_size-frame_id % self._batch_size) % self._batch_size
-                #     if self._next_frame_id == frame_id:
-                #         self._img_batch.append(img)
-                #         self._next_frame_id += 1
                 if frame_id == self._next_frame_id:
                     self._img_batch[self._get_img_index_in_batch(frame_id)] = img
                     self._img_batch[4] += 1
@@ -90,32 +73,11 @@ class VideoThread(QThread):
         self.camera.close()
         self.wait()
 
-    @pyqtSlot()
-    def trigger_save(self, image_dir=None, image_name=None, blocking=False):
-        self.trigger_pseudo_block(lambda im: self._save_image(im, image_name=image_name, image_dir=image_dir))
-
-    @pyqtSlot()
-    def trigger_reload(self):
-        self._task_queue.put(lambda *args: self.camera.configure())
-
-    def _save_image(self, image, image_name=None, image_dir=None):
-        if image_name is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            image_name = f"image_{timestamp}"
-
-        if image_dir is None:
-            image_dir = '.'
-
-        image_path = Path(AppConfigManager.config.image_acquisition.image_save_dir)/image_dir
-        os.makedirs(image_path, exist_ok=True)
-        cv2.imwrite(image_path/f"{image_name}.png", image)
-        cv2.imwrite(image_path, image, [cv2.IMWRITE_PNG_COMPRESSION, 0])
-
 
 class ImageHandlerThread(QThread):
-    change_pixmap_signal = pyqtSignal(QImage)
+    change_pixmap_signal = pyqtSignal(QImage, np.ndarray)
 
-    def __init__(self, image_queue: Queue[np.ndarray], hist_canvas):
+    def __init__(self, image_queue: Queue[np.ndarray]):
         super().__init__()
         self._run_flag = True
         self._input_image_queue = image_queue
@@ -123,34 +85,33 @@ class ImageHandlerThread(QThread):
         self.process_fun = lambda imgs: imgs[0]
         self.processors = {}
 
-        self.hist_canvas = hist_canvas
-
     def run(self):
         while self._run_flag:
             try:
                 imgs = self._input_image_queue.get(timeout=1)
             except queue.Empty:
                 continue
-            
+
             img = self.process_fun(imgs)
-            
-            if random.random() > 0.9:
-                self.hist_canvas.plot_histogram(img)
 
             if self.output_image_queue.empty():
                 self.output_image_queue.put(img)
-            
+
             h, w = img.shape
             bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
             convert_to_Qt_format = QImage(
                 img.data, w, h, bytes_per_line,
                 QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
-            p = convert_to_Qt_format.scaled(612, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            self.change_pixmap_signal.emit(p)
+            pixelmap = convert_to_Qt_format.scaled(612, 512, Qt.AspectRatioMode.KeepAspectRatio,
+                                                   Qt.TransformationMode.SmoothTransformation)
+
+            hist = cv2.calcHist([img], [0], None, [256], [0, 256 if img.dtype == np.uint8 else 65536])
+
+            self.change_pixmap_signal.emit(pixelmap, hist[:, 0])
 
     def trigger_display_processing(self, mode: int):
         if mode <= 4:
-            self.process_fun = lambda imgs: imgs[min(mode, len(imgs))-1]
+            self.process_fun = lambda imgs: imgs[min(mode, len(imgs))-1]  # TODO: it doesn't work
         elif mode == 5:
             self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]), imgs[0].dtype)
         elif mode == 6:
@@ -164,7 +125,7 @@ class ImageHandlerThread(QThread):
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
         def measure_brightness_process_fun(ims):
-            scaling = 1/255 if ims[0].dtype==np.uint8 else 1/65535
+            scaling = 1/255 if ims[0].dtype == np.uint8 else 1/65535
             result_queue.put((ims[0]*scaling).sum())
             return ims[0]
 
@@ -280,14 +241,12 @@ class CaptureThread(QThread):
         self.lcd_thread = lcd_thread
 
     def run(self):
-        # start_time = time.time()*1000
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        # working_dir = AppConfigManager.config.camera.image_save_dir/timestamp
         working_dir = AppConfigManager.config.image_acquisition.image_save_dir
         os.makedirs(working_dir, exist_ok=True)
 
         try:
-            ## clear stale image
+            # clear stale image
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
             print(img.shape)
@@ -295,28 +254,6 @@ class CaptureThread(QThread):
             print(f'Image saved: {working_dir/f"{timestamp}.tiff"}')
         except queue.Empty:
             pass
-
-        # bottom_im = im_queue.get()
-        # top_im = im_queue.get()
-        # right_im = im_queue.get()
-        # left_im = im_queue.get()
-
-        # cv2.imwrite(working_dir/"brightfield_tb.tiff", standardize(bottom_im*1.+top_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        # cv2.imwrite(working_dir/"brightfield_lr.tiff", standardize(left_im*1.+right_im), [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-
-        # cv2.imwrite(working_dir/'01_top.tiff', top_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        # cv2.imwrite(working_dir/'02_bottom.tiff', bottom_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        # cv2.imwrite(working_dir/'04_left.tiff', left_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-        # cv2.imwrite(working_dir/'03_right.tiff', right_im, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-
-        # vertical_res = differential_phase_contrast(top_im, bottom_im)
-        # cv2.imwrite(working_dir/"vertical.png", standardize(vertical_res))
-        # horizontal_res = differential_phase_contrast(right_im, left_im)
-        # cv2.imwrite(working_dir/"horizontal.png", standardize(horizontal_res))
-
-        # res = fdspi(vertical_res, -horizontal_res)
-        # cv2.imwrite(working_dir/"phase_diagram.png", standardize(res))
-        # cv2.imwrite(working_dir/"corrected_phase_diagram.png", standardize(res - np.load(working_dir/'..'/"background"/"phase.npy")))
 
 
 class AdjustThread(QThread):
@@ -338,7 +275,7 @@ class AdjustThread(QThread):
         delta_brightness -= result_queue.get()
 
         return delta_brightness
-    
+
     def _measure_brightness(self):
         result_queue = Queue(1)
 
@@ -391,7 +328,7 @@ class AdjustThread(QThread):
         if abs(delta_brightness2) > abs(delta_brightness):
             self.lcd_thread.trigger_update_pos(0, -1)
 
-        ## Radius auto adjustment
+        # Radius auto adjustment
         self.lcd_thread.outer_radius = 5
         prev_brightness = float('-inf')
         brightness = 0
@@ -409,33 +346,29 @@ class AdjustThread(QThread):
             print(f"New radius: {self.lcd_thread.outer_radius}")
             brightness = self._measure_brightness()
             print(f"Brightness: {brightness}")
-        
+
         self.lcd_thread.outer_radius += 1
         print(f"New radius: {self.lcd_thread.outer_radius}")
         brightness = self._measure_brightness()
         print(f"Brightness: {brightness}")
-        
 
-class HistogramCanvas(FigureCanvas):
+
+class HistogramCanvas(pg.PlotWidget):
     """A matplotlib canvas integrated into the PyQt ecosystem."""
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
-        self.fig, self.ax = plt.subplots(figsize=(width, height), dpi=dpi)
-        self.ax.margins(0, 0)
-        super().__init__(self.fig)
-        self.setParent(parent)
-        
-    def plot_histogram(self, cv_image):
-        """Calculates and plots the RGB histogram."""
-        self.ax.clear() # Clear previous plot
-        
-        hist = cv2.calcHist([cv_image], [0], None, [256], [0, 256 if cv_image.dtype==np.uint8 else 65536])
-        # self.ax.plot(hist, color='b', linewidth=1.5)
-        self.ax.plot(hist, color='b')
-        self.ax.set_title("Image Histogram")
-        self.ax.set_xlim([0, 256])
-        self.ax.set_axis_off()
-        
-        self.draw() # Refresh the canvas
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.graph = self.plot(
+            stepMode="center",     # Connects points as histogram bins
+            fillLevel=0,          # Fills the area down to y=0
+            fillOutline=True,     # Draws an explicit outline around the shape
+            brush=(0, 100, 255, 150),  # RGBA fill color (Semi-transparent blue)
+            pen=pg.mkPen('w', width=1.5)  # White outline border
+        )
+
+    def plot_histogram(self, hist):
+        self.graph.setData(np.arange(len(hist)+1), hist)
+
 
 class App(QWidget):
     def __init__(self):
@@ -445,12 +378,12 @@ class App(QWidget):
         self.capture_btn = QPushButton("Capture")
         self.config_btn = QPushButton("Reload configuration")
 
-        self.hist_canvas = HistogramCanvas(self, width=10, height=40, dpi=100)
+        self.hist_canvas = HistogramCanvas(self)
         self.label.setScaledContents(True)
 
         # Create thread
         self.video_thread = VideoThread(batch_size=4)
-        self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue(), self.hist_canvas)
+        self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue())
         self.image_handler_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.error_signal.connect(self.close)
         self.video_thread.start()
@@ -543,9 +476,10 @@ class App(QWidget):
         else:
             pass
 
-    def update_image(self, qt_img):
+    def update_image(self, qt_img, hist):
         """Updates the image_label with a new image"""
         self.label.setPixmap(QPixmap.fromImage(qt_img))
+        self.hist_canvas.plot_histogram(hist)
 
     def closeEvent(self, event):
         self.video_thread.stop()
