@@ -102,8 +102,8 @@ class ImageHandlerThread(QThread):
             convert_to_Qt_format = QImage(
                 img.data, w, h, bytes_per_line,
                 QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
-            pixelmap = convert_to_Qt_format.scaled(612, 512, Qt.AspectRatioMode.KeepAspectRatio,
-                                                   Qt.TransformationMode.SmoothTransformation)
+            pixelmap = convert_to_Qt_format.scaled(
+                512, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
             hist = cv2.calcHist([img], [0], None, [256], [0, 256 if img.dtype == np.uint8 else 65536])
 
@@ -379,7 +379,7 @@ class App(QWidget):
         self.config_btn = QPushButton("Reload configuration")
 
         self.hist_canvas = HistogramCanvas(self)
-        self.label.setScaledContents(True)
+        # self.label.setScaledContents(True)
 
         # Create thread
         self.video_thread = VideoThread(batch_size=4)
@@ -420,18 +420,21 @@ class App(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_X:
+            self.image_handler_thread.trigger_display_processing(1)
             self.lcd_thread.trigger_none(True)
             while not self.video_thread.get_image_queue().empty():
                 time.sleep(0.01)
             self.video_thread.set_image_batch_size(1)
             self.lcd_thread.trigger_split_x(-1)
         elif event.key() == Qt.Key_Y:
+            self.image_handler_thread.trigger_display_processing(1)
             self.lcd_thread.trigger_none(True)
             while not self.video_thread.get_image_queue().empty():
                 time.sleep(0.01)
             self.video_thread.set_image_batch_size(1)
             self.lcd_thread.trigger_split_y(-1)
         elif event.key() == Qt.Key_C:
+            self.image_handler_thread.trigger_display_processing(1)
             self.lcd_thread.trigger_none(True)
             while not self.video_thread.get_image_queue().empty():
                 time.sleep(0.01)
@@ -448,6 +451,7 @@ class App(QWidget):
         elif event.key() == Qt.Key_D:
             self.lcd_thread.trigger_update_pos(0, 1)
         elif event.key() == Qt.Key_O:
+            self.image_handler_thread.trigger_display_processing(1)
             self.lcd_thread.trigger_none(True)
             while not self.video_thread.get_image_queue().empty():
                 time.sleep(0.01)
