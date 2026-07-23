@@ -4,7 +4,9 @@ import yaml
 import os
 from pathlib import Path
 
-WORKSPACE = r"C:\Users\jche774\Majar\Projects\jason-2026-differential-phase-contrast\workspace"
+##TODO: A temporary hack
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+WORKSPACE = PROJECT_ROOT
 CONFIG_PATH = os.path.join(WORKSPACE, "config.yaml")
 CONFIG_TEMPLATE_PATH = os.path.join(WORKSPACE, "config.template.yaml")
     
