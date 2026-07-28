@@ -7,7 +7,6 @@ import threading
 from datetime import datetime
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
-from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPushButton, QWidget
 import numpy as np
 import cv2
@@ -15,7 +14,7 @@ import pyqtgraph as pg
 
 from core.config import AppConfigManager
 from adapters.lcd.lcd_control import LCDMode
-from optics import FDSPIOptimized, differential_phase_contrast, normalize
+from optics import FDSPIOptimized, differential_phase_contrast
 
 
 class VideoThread(QThread):
@@ -73,7 +72,7 @@ class VideoThread(QThread):
 
 
 class ImageHandlerThread(QThread):
-    change_pixmap_signal = pyqtSignal(QImage, np.ndarray)
+    change_pixmap_signal = pyqtSignal(np.ndarray, np.ndarray)
 
     def __init__(self, image_queue: Queue[np.ndarray]):
         super().__init__()
@@ -95,30 +94,27 @@ class ImageHandlerThread(QThread):
             if self.output_image_queue.empty():
                 self.output_image_queue.put(img)
 
-            h, w = img.shape
-            bytes_per_line = int(w if img.dtype == np.uint8 else 2*w)
-            convert_to_Qt_format = QImage(
-                img.data, w, h, bytes_per_line,
-                QImage.Format_Grayscale8 if img.dtype == np.uint8 else QImage.Format_Grayscale16)
-            pixelmap = convert_to_Qt_format.scaled(
-                512, 512, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            if img.dtype == np.uint8:
+                hist = cv2.calcHist([img], [0], None, [256], [0, 256])
+            elif img.dtype == np.uint16:
+                hist = cv2.calcHist([img], [0], None, [256], [0, 65536])
+            else:
+                hist = np.array([[0]])
 
-            hist = cv2.calcHist([img], [0], None, [256], [0, 256 if img.dtype == np.uint8 else 65536])
-
-            self.change_pixmap_signal.emit(pixelmap, hist[:, 0])
+            self.change_pixmap_signal.emit(img, hist[:, 0])
 
     def trigger_display_processing(self, mode: int):
         if mode <= 4:
             self.process_fun = lambda imgs: imgs[min(mode, len(imgs))-1]  # TODO: it doesn't work
         elif mode == 5:
-            self.process_fun = lambda imgs: normalize(differential_phase_contrast(imgs[0], imgs[1]), imgs[0].dtype)
+            self.process_fun = lambda imgs: differential_phase_contrast(imgs[0], imgs[1])
         elif mode == 6:
-            self.process_fun = lambda imgs: normalize(differential_phase_contrast(imgs[2], imgs[3]), imgs[0].dtype)
+            self.process_fun = lambda imgs: differential_phase_contrast(imgs[2], imgs[3])
         elif mode == 7:
             if "FDSPI" not in self.processors:
                 self.processors = {"FDSPI": FDSPIOptimized()}
-            self.process_fun = lambda imgs: normalize(self.processors["FDSPI"](differential_phase_contrast(
-                imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3])), imgs[0].dtype)
+            self.process_fun = lambda imgs: self.processors["FDSPI"](differential_phase_contrast(
+                imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3]))
 
     @pyqtSlot()
     def trigger_measure_brightness(self, result_queue):
@@ -367,17 +363,52 @@ class HistogramCanvas(pg.PlotWidget):
     def plot_histogram(self, hist):
         self.graph.setData(np.arange(len(hist)+1), hist)
 
+class ImageCanvas(pg.PlotWidget):
+    hover_signal = pyqtSignal(int, int, float)
+    def __init__(self, pixel_bits=8):
+        super().__init__()
+        self.image_item = pg.ImageItem()
+        self.addItem(self.image_item)
+
+        self.getViewBox().setDefaultPadding(0)
+        self.showAxis('bottom', False)
+        self.showAxis('left', False)
+        self.setAspectLocked(True)
+
+        colormap = pg.ColorMap([0.0, 1.0], np.array([[0, 0, 0],[255, 255, 255]], dtype=np.ubyte))
+        self.image_item.setColorMap(colormap)
+        self.scene().sigMouseMoved.connect(self.on_mouse_moved)
+
+    def set_image(self, image: np.ndarray):
+        self.image_item.setImage(image, autoLevels=True)
+
+    def on_mouse_moved(self, pos):
+        if self.sceneBoundingRect().contains(pos):
+            mouse_point = self.plotItem.vb.mapSceneToView(pos)
+            x, y = int(mouse_point.x()), int(mouse_point.y())
+            
+            # Check array bounds
+            image = self.image_item.image
+            if image is None:
+                self.hover_signal.emit(-1, -1, 0)
+                return
+            nrows, ncols = image.shape
+            if 0 <= x < ncols and 0 <= y < nrows:
+                self.hover_signal.emit(x, y, image[y, x])
+            else:
+                self.hover_signal.emit(-1, -1, 0)
 
 class App(QWidget):
     def __init__(self, camera_impl, lcd_controller_impl):
         super().__init__()
         self.setWindowTitle("Stream")
-        self.label = QLabel(self)
+        self.image_canvas = ImageCanvas(8 if AppConfigManager.config.image_acquisition.camera.pixel_format=='Mono8' else 16)
+        self.hist_canvas = HistogramCanvas(self)
         self.capture_btn = QPushButton("Capture")
         self.config_btn = QPushButton("Reload configuration")
-
-        self.hist_canvas = HistogramCanvas(self)
-        # self.label.setScaledContents(True)
+        self.info_label = QLabel("Hover over the image")
+        
+        self.image_canvas.hover_signal.connect(self.update_info_label)
 
         # Create thread
         self.video_thread = VideoThread(camera_impl, batch_size=4)
@@ -397,7 +428,7 @@ class App(QWidget):
         container = QWidget()
         container.setMinimumSize(200, 300)
         menu_layout = QVBoxLayout(container)
-        layout.addWidget(self.label)
+        layout.addWidget(self.image_canvas)
         menu_layout.setSpacing(10)
         menu_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(container)
@@ -407,6 +438,7 @@ class App(QWidget):
         menu_layout.addWidget(self.capture_btn)
         menu_layout.addWidget(self.config_btn)
         menu_layout.addStretch(1)
+        menu_layout.addWidget(self.info_label)
 
         pattern_layout = QHBoxLayout()
         menu_layout.addLayout(pattern_layout)
@@ -478,10 +510,13 @@ class App(QWidget):
         else:
             pass
 
-    def update_image(self, qt_img, hist):
+    def update_image(self, img, hist):
         """Updates the image_label with a new image"""
-        self.label.setPixmap(QPixmap.fromImage(qt_img))
+        self.image_canvas.set_image(img)
         self.hist_canvas.plot_histogram(hist)
+
+    def update_info_label(self, x, y, value):
+        self.info_label.setText(f'({x}, {y})| {value:2f}')
 
     def closeEvent(self, event):
         self.video_thread.stop()
