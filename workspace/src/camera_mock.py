@@ -1,4 +1,3 @@
-import PySpin
 import numpy as np
 
 class PySpinCamera():

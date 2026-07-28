@@ -6,7 +6,7 @@ import pickle
 
 cache = {}
 
-def standardize(img: np.ndarray, dtype=np.uint8):
+def normalize(img: np.ndarray, dtype=np.uint8):
     diff = img.max() - img.min()
     if diff == 0:
         return np.zeros(img.shape, dtype=dtype)
@@ -196,32 +196,27 @@ class FDSPIOptimized:
 
 if __name__ == "__main__":
     import cv2
-    from pathlib import Path
-    im_size = 512
-    ext = 'png'
+    import sys
+    IM_SIZE = 512
+    EXT = 'png'
+    IM_DIR = None
 
-
-    im_dir = Path("images")/"20260506_005405_165253"
-    top_im = cv2.imread(im_dir/f'01_top.{ext}', cv2.IMREAD_UNCHANGED)
-    bottom_im = cv2.imread(im_dir/f'02_bottom.{ext}', cv2.IMREAD_UNCHANGED)
-    vertical_res = differential_phase_contrast(top_im, bottom_im)
-    # cv2.imwrite(im_dir/"vertical.png", standardize(vertical_res))
-    left_im = cv2.imread(im_dir/f'04_left.{ext}', cv2.IMREAD_UNCHANGED)
-    right_im = cv2.imread(im_dir/f'03_right.{ext}', cv2.IMREAD_UNCHANGED)
-    horizontal_res = differential_phase_contrast(right_im, left_im)
-    # cv2.imwrite(im_dir/"horizontal.png", standardize(horizontal_res))
     ffdspi = FDSPIOptimized()
-    # res = ffdspi(np.zeros_like(vertical_res), np.zeros_like(-horizontal_res))
-    res = ffdspi(np.zeros_like(vertical_res[:im_size,:im_size]), np.zeros_like(-horizontal_res[:im_size,:im_size]))
-    import time
-    start_time = time.time() * 1000
-    # res = fdspi(vertical_res, -horizontal_res)
-    res = ffdspi(vertical_res[:im_size,:im_size], -horizontal_res[:im_size,:im_size])
-    print(time.time()*1000-start_time)
-    # np.save(im_dir/"phase.npy", res)
-    res = standardize(res)
-    start_time = time.time() * 1000
-    cv2.imwrite(im_dir/"phase_diagram.tiff", res, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
-    print(time.time()*1000-start_time)
-    # background = np.load(im_dir/'..'/"background"/"phase.npy")
-    # cv2.imwrite(im_dir/"corrected_phase_diagram.png", standardize(res - background))
+    if IM_DIR is None:
+        res = ffdspi(np.zeros((IM_SIZE,IM_SIZE)), np.zeros((IM_SIZE,IM_SIZE)))
+        sys.exit(0)
+
+    
+    top_im = cv2.imread(IM_DIR/f'01_top.{EXT}', cv2.IMREAD_UNCHANGED)
+    bottom_im = cv2.imread(IM_DIR/f'02_bottom.{EXT}', cv2.IMREAD_UNCHANGED)
+    left_im = cv2.imread(IM_DIR/f'04_left.{EXT}', cv2.IMREAD_UNCHANGED)
+    right_im = cv2.imread(IM_DIR/f'03_right.{EXT}', cv2.IMREAD_UNCHANGED)
+
+    vertical_res = differential_phase_contrast(top_im, bottom_im)
+    horizontal_res = differential_phase_contrast(right_im, left_im)
+    cv2.imwrite(IM_DIR/"vertical.png", normalize(vertical_res))
+    cv2.imwrite(IM_DIR/"horizontal.png", normalize(horizontal_res))
+
+    res = ffdspi(vertical_res[:IM_SIZE,:IM_SIZE], -horizontal_res[:IM_SIZE,:IM_SIZE])
+    res = normalize(res)
+    cv2.imwrite(IM_DIR/"phase_diagram.tiff", res, [cv2.IMWRITE_TIFF_COMPRESSION, 1])

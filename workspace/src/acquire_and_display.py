@@ -17,7 +17,7 @@ import pyqtgraph as pg
 from camera import PySpinCamera
 from core.config import AppConfigManager
 from adapters.lcd_control import LCDMode, LCDController
-from optics import FDSPIOptimized, differential_phase_contrast, standardize
+from optics import FDSPIOptimized, differential_phase_contrast, normalize
 
 
 class VideoThread(QThread):
@@ -113,13 +113,13 @@ class ImageHandlerThread(QThread):
         if mode <= 4:
             self.process_fun = lambda imgs: imgs[min(mode, len(imgs))-1]  # TODO: it doesn't work
         elif mode == 5:
-            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[0], imgs[1]), imgs[0].dtype)
+            self.process_fun = lambda imgs: normalize(differential_phase_contrast(imgs[0], imgs[1]), imgs[0].dtype)
         elif mode == 6:
-            self.process_fun = lambda imgs: standardize(differential_phase_contrast(imgs[2], imgs[3]), imgs[0].dtype)
+            self.process_fun = lambda imgs: normalize(differential_phase_contrast(imgs[2], imgs[3]), imgs[0].dtype)
         elif mode == 7:
             if "FDSPI" not in self.processors:
                 self.processors = {"FDSPI": FDSPIOptimized()}
-            self.process_fun = lambda imgs: standardize(self.processors["FDSPI"](differential_phase_contrast(
+            self.process_fun = lambda imgs: normalize(self.processors["FDSPI"](differential_phase_contrast(
                 imgs[0], imgs[1]), -differential_phase_contrast(imgs[2], imgs[3])), imgs[0].dtype)
 
     @pyqtSlot()
