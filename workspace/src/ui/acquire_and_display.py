@@ -1,7 +1,6 @@
 from queue import Queue
 import queue
 import time
-from pathlib import Path
 import os
 import sys
 import threading
@@ -14,19 +13,18 @@ import numpy as np
 import cv2
 import pyqtgraph as pg
 
-from camera import PySpinCamera
 from core.config import AppConfigManager
-from adapters.lcd_control import LCDMode, LCDController
+from adapters.lcd.lcd_control import LCDMode
 from optics import FDSPIOptimized, differential_phase_contrast, normalize
 
 
 class VideoThread(QThread):
     error_signal = pyqtSignal(str)
 
-    def __init__(self, batch_size=1):
+    def __init__(self, camera_impl, batch_size=1):
         super().__init__()
         self._run_flag = True
-        self.camera = PySpinCamera(0)
+        self.camera = camera_impl  # PySpinCamera(0)
         self.camera.open()
 
         self._batch_size = batch_size
@@ -134,10 +132,10 @@ class ImageHandlerThread(QThread):
 
 
 class LCDControlThread(QThread):
-    def __init__(self):
+    def __init__(self, lcd_controller_impl):
         super().__init__()
         self._reverse = False
-        self._lcd_controller = LCDController()
+        self._lcd_controller = lcd_controller_impl
         self._update_pending = False
         self._lcd_mode = LCDMode.CIRCULAR
         self._run_flag = True
@@ -371,7 +369,7 @@ class HistogramCanvas(pg.PlotWidget):
 
 
 class App(QWidget):
-    def __init__(self):
+    def __init__(self, camera_impl, lcd_controller_impl):
         super().__init__()
         self.setWindowTitle("Stream")
         self.label = QLabel(self)
@@ -382,14 +380,14 @@ class App(QWidget):
         # self.label.setScaledContents(True)
 
         # Create thread
-        self.video_thread = VideoThread(batch_size=4)
+        self.video_thread = VideoThread(camera_impl, batch_size=4)
         self.image_handler_thread = ImageHandlerThread(self.video_thread.get_image_queue())
         self.image_handler_thread.change_pixmap_signal.connect(self.update_image)
         self.video_thread.error_signal.connect(self.close)
         self.video_thread.start()
         self.image_handler_thread.start()
 
-        self.lcd_thread = LCDControlThread()
+        self.lcd_thread = LCDControlThread(lcd_controller_impl)
         self.lcd_thread.start()
 
         self.thread = None
@@ -493,7 +491,10 @@ class App(QWidget):
 
 
 if __name__ == "__main__":
+    from adapters.camera.camera_mock import PySpinCamera
+    from adapters.lcd.lcd_mock import LCDController
+    
     app = QApplication(sys.argv)
-    a = App()
+    a = App(PySpinCamera(), LCDController())
     a.show()
     sys.exit(app.exec_())
