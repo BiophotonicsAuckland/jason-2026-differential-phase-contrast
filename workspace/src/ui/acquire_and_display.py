@@ -8,13 +8,14 @@ from datetime import datetime
 
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, pyqtSlot
 from PyQt5.QtWidgets import QApplication, QLabel, QHBoxLayout, QVBoxLayout, QPushButton, QWidget
+from PyQt5.QtGui import QPainter
 import numpy as np
 import cv2
 import pyqtgraph as pg
 
 from core.config import AppConfigManager
 from adapters.lcd.lcd_control import LCDMode
-from optics import FDSPIOptimized, differential_phase_contrast
+from optics import FDSPIOptimized, differential_phase_contrast, normalize
 
 
 class VideoThread(QThread):
@@ -244,6 +245,8 @@ class CaptureThread(QThread):
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
             img = self.image_handler_thread.output_image_queue.get(timeout=1)
             print(img.shape)
+            if img.dtype not in [np.uint8, np.uint16]:
+                img = normalize(img, np.uint16)
             cv2.imwrite(working_dir/f"{timestamp}.tiff", img, [cv2.IMWRITE_TIFF_COMPRESSION, 1])
             print(f'Image saved: {working_dir/f"{timestamp}.tiff"}')
         except queue.Empty:
@@ -378,9 +381,13 @@ class ImageCanvas(pg.PlotWidget):
         colormap = pg.ColorMap([0.0, 1.0], np.array([[0, 0, 0],[255, 255, 255]], dtype=np.ubyte))
         self.image_item.setColorMap(colormap)
         self.scene().sigMouseMoved.connect(self.on_mouse_moved)
+        self.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
     def set_image(self, image: np.ndarray):
-        self.image_item.setImage(image, autoLevels=True)
+        if image.dtype in [np.uint8, np.uint16]:
+            self.image_item.setImage(image.T, levels=[0, 255 if image.dtype==np.uint8 else 65535])
+        else:
+            self.image_item.setImage(image.T, autoLevels=True)
 
     def on_mouse_moved(self, pos):
         if self.sceneBoundingRect().contains(pos):
